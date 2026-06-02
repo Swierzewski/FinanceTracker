@@ -1,0 +1,13 @@
+# ── Flask Web Application (app.py) ────────────────────────────────────────────
+flask==3.1.1
+pandas==3.0.3
+plotly==6.7.0
+numpy==2.4.6
+pyyaml==6.0.1
+
+# ── AI / LLM — natural language parsing (helper.py) ──────────────────────────
+ollama==0.6.2
+
+# ── Telegram Bot (telegram_bot.py) ────────────────────────────────────────────
+pyTelegramBotAPI==4.33.0
+python-dotenv==1.2.2

@@ -1,0 +1,1167 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<!-- Hero -->
+<div class="hero-container">
+    <div class="hero-title">Financial Intelligence. Automated.</div>
+    <div class="hero-subtitle">Real-time insights, AI-driven data entry, and comprehensive wealth tracking. Elevate your financial control with our enterprise-grade monitoring dashboard.</div>
+</div>
+
+<!-- Recurring expense notifications -->
+{% if checklist_notifications %}
+<div class="notifications-area">
+    {% for n in checklist_notifications %}
+    <div class="notif-banner notif-{{ n.type }}">
+        {% if n.type == 'warning' %}📅{% else %}🚨{% endif %}
+        {{ n.message }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Tab Bar -->
+<nav class="tab-bar">
+    <button class="tab-btn active" data-tab="tab-general">Accounts &amp; General</button>
+    <button class="tab-btn"        data-tab="tab-monthly">Monthly Breakdown</button>
+    <button class="tab-btn"        data-tab="tab-trends">Trend Lines</button>
+    <button class="tab-btn"        data-tab="tab-invest">Asset Valuation</button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- TAB 1 · ACCOUNTS & GENERAL                         -->
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="tab-general" class="tab-panel active">
+
+    <h2 class="section-title">Live Account Balances</h2>
+    <div class="metrics-grid cols-{{ card_balances|length }}">
+        {% for card, bal in card_balances.items() %}
+        <div class="metric-card">
+            <div class="metric-label">🏦 {{ card }}</div>
+            <div class="metric-value">{{ "%.2f"|format(bal) }} zł</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <hr class="divider">
+
+    <h2 class="section-title">Global Wealth Overview</h2>
+    <div class="metrics-grid cols-3">
+        <div class="metric-card">
+            <div class="metric-label">Total Net Worth</div>
+            <div class="metric-value">{{ "%.2f"|format(total_net_worth) }} zł</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Total Liquid Assets (Accounts)</div>
+            <div class="metric-value">{{ "%.2f"|format(total_liquid_cash) }} zł</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Total Invested Portfolio</div>
+            <div class="metric-value">{{ "%.2f"|format(total_invested) }} zł</div>
+        </div>
+    </div>
+
+    <!-- Recurring Expense Checklist -->
+    <hr class="divider">
+    <div class="checklist-card">
+        <div class="checklist-card-header">
+            <span class="checklist-card-title">📋 Recurring Expense Checklist</span>
+            <span style="font-size:0.8rem;color:var(--text-secondary);">Auto-marks paid when a matching expense is logged</span>
+        </div>
+
+        <form class="checklist-add-form" id="checklist-add-form">
+            <input type="text"   id="cl-name"    placeholder="Expense name (e.g. Rent)" required>
+            <input type="number" id="cl-day"     placeholder="Day" min="1" max="31" required>
+            <button type="submit" class="btn">+ Add</button>
+        </form>
+
+        <ul class="checklist-list" id="checklist-list">
+            {% if checklist_items %}
+                {% for item in checklist_items %}
+                <li class="checklist-list-item {% if item.is_paid_this_month %}paid{% endif %}"
+                    data-id="{{ item.id }}">
+                    <button class="checklist-toggle" title="Toggle paid">✓</button>
+                    <span class="checklist-name">{{ item.name }}</span>
+                    <span class="checklist-due">due {{ item.due_day }}{{ item.due_day | ordinal }}</span>
+                    <button class="checklist-del" title="Remove">✕</button>
+                </li>
+                {% endfor %}
+            {% else %}
+                <li class="checklist-empty" id="checklist-empty">No items yet. Add a recurring expense above.</li>
+            {% endif %}
+        </ul>
+    </div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- TAB 2 · MONTHLY BREAKDOWN                          -->
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="tab-monthly" class="tab-panel">
+
+    <h2 class="section-title">Detailed Monthly View</h2>
+
+    <div class="form-group" style="max-width:220px; margin-bottom:24px;">
+        <label class="form-label" for="month-select">Select Month</label>
+        <select id="month-select">
+            {% for m in months_list %}
+            <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Summary metrics — populated via JS -->
+    <div class="metrics-grid cols-2" style="margin-bottom:16px;">
+        <div class="metric-card" id="m-income">
+            <div class="metric-label">Monthly Income</div>
+            <div class="metric-value">—</div>
+        </div>
+        <div class="metric-card" id="m-expenses">
+            <div class="metric-label">Monthly Expenses</div>
+            <div class="metric-value">—</div>
+        </div>
+    </div>
+
+    <h3 class="section-subtitle">50/30/20 Rule Breakdown</h3>
+    <div class="metrics-grid cols-3">
+        <div class="metric-card" id="m-needs">
+            <div class="metric-label">Needs (Target 50%)</div>
+            <div class="metric-value">—</div>
+            <div class="metric-delta"></div>
+        </div>
+        <div class="metric-card" id="m-wants">
+            <div class="metric-label">Wants (Target 30%)</div>
+            <div class="metric-value">—</div>
+            <div class="metric-delta"></div>
+        </div>
+        <div class="metric-card" id="m-invest">
+            <div class="metric-label">Investments (Target 20%)</div>
+            <div class="metric-value">—</div>
+            <div class="metric-delta"></div>
+        </div>
+    </div>
+
+    <hr class="divider">
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+        <div>
+            <h3 class="section-subtitle">Expenses this Month</h3>
+            <div class="data-table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Date</th><th>Item</th><th>Amount</th><th>Category</th><th>Bucket</th><th>Card</th>
+                    </tr></thead>
+                    <tbody id="exp-table"></tbody>
+                </table>
+            </div>
+        </div>
+        <div>
+            <h3 class="section-subtitle">Income this Month</h3>
+            <div class="data-table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Date</th><th>Source</th><th>Amount</th><th>Card</th>
+                    </tr></thead>
+                    <tbody id="inc-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- TAB 3 · TREND LINES                                -->
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="tab-trends" class="tab-panel">
+
+    <h2 class="section-title">Analytics Dashboard</h2>
+
+    {% if trend_data %}
+    <div class="chart-card" style="position:relative; height:420px;">
+        <canvas id="trend-chart"></canvas>
+    </div>
+    {% else %}
+    <div class="alert alert-info">Insufficient cross-month logged data to construct comparison vectors.</div>
+    {% endif %}
+
+    {% if analytics_data %}
+    <div class="charts-grid-2">
+        <div class="chart-card" style="position:relative; height:300px;"><canvas id="chart-expenses"></canvas></div>
+        <div class="chart-card" style="position:relative; height:300px;"><canvas id="chart-cumulative"></canvas></div>
+    </div>
+    <div class="charts-grid-2">
+        <div class="chart-card" style="position:relative; height:300px;"><canvas id="chart-income-exp"></canvas></div>
+        <div class="chart-card" style="position:relative; height:300px;"><canvas id="chart-breakdown"></canvas></div>
+    </div>
+    <div class="chart-card" style="position:relative; height:300px;"><canvas id="chart-mom"></canvas></div>
+    {% else %}
+    <div class="alert alert-info">Add income and expense data across multiple months to see the analytics dashboard.</div>
+    {% endif %}
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- TAB 4 · ASSET VALUATION                            -->
+<!-- ═══════════════════════════════════════════════════ -->
+<section id="tab-invest" class="tab-panel">
+
+    <h2 class="section-title">Investment Portfolio</h2>
+
+    <!-- Summary metrics -->
+    <div class="metrics-grid cols-3" style="margin-bottom:28px;">
+        <div class="metric-card">
+            <div class="metric-label">Total Amount Invested</div>
+            <div class="metric-value">{{ "%.2f"|format(portfolio_invested) }} zł</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Total Current Value</div>
+            <div class="metric-value">{{ "%.2f"|format(portfolio_current) }} zł</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Total Profit / Loss</div>
+            <div class="metric-value {{ 'pnl-positive' if portfolio_pnl >= 0 else 'pnl-negative' }}">
+                {{ "%+.2f"|format(portfolio_pnl) }} zł
+            </div>
+            {% if portfolio_invested > 0 %}
+            <div class="metric-delta {{ 'pnl-positive' if portfolio_pnl >= 0 else 'pnl-negative' }}">
+                {{ "%+.1f%%"|format(portfolio_pnl / portfolio_invested * 100) }} overall ROI
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Chart.js bar chart -->
+    {% if portfolio_rows %}
+    <div class="chart-card" style="margin-bottom:28px;">
+        <canvas id="invest-bar-chart" height="110"></canvas>
+    </div>
+    {% endif %}
+
+    <!-- Add / Update forms -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:28px;">
+
+        <div class="metric-card">
+            <h3 class="section-subtitle" style="margin-top:0; margin-bottom:16px;">Add New Asset</h3>
+            <form id="invest-add-form">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label">Asset Name</label>
+                    <input type="text" id="inv-asset-name" placeholder="e.g. AAPL, BTC, VOO ETF">
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label">Amount Invested (zł)</label>
+                    <input type="text" id="inv-amount" placeholder="e.g. 5000">
+                </div>
+                <div class="form-group" style="margin-bottom:20px;">
+                    <label class="form-label">Current Value (zł) — leave blank to match invested</label>
+                    <input type="text" id="inv-current" placeholder="e.g. 5400">
+                </div>
+                <button type="submit" class="btn btn-full">+ Add Asset</button>
+            </form>
+            <div id="invest-add-alert" class="alert" style="display:none; margin-top:12px;"></div>
+        </div>
+
+        <div class="metric-card">
+            <h3 class="section-subtitle" style="margin-top:0; margin-bottom:16px;">Update Current Value</h3>
+            <form id="invest-update-form">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label">Select Asset</label>
+                    <select id="inv-select-asset">
+                        <option value="">— Select asset —</option>
+                        {% for row in portfolio_rows %}
+                        <option value="{{ row.id }}">{{ row.asset_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:20px;">
+                    <label class="form-label">New Current Value (zł)</label>
+                    <input type="text" id="inv-new-value" placeholder="e.g. 5800">
+                </div>
+                <button type="submit" class="btn btn-full">Update Value</button>
+            </form>
+            <div id="invest-update-alert" class="alert" style="display:none; margin-top:12px;"></div>
+        </div>
+
+    </div>
+
+    <!-- Holdings table -->
+    {% if portfolio_rows %}
+    <h3 class="section-subtitle">Portfolio Holdings</h3>
+    <div class="data-table-wrap" id="portfolio-table-wrap">
+        <table>
+            <thead><tr>
+                <th>Asset</th>
+                <th>Invested (zł)</th>
+                <th>Current Value (zł)</th>
+                <th>P&amp;L (zł)</th>
+                <th>ROI</th>
+                <th>Last Updated</th>
+                <th></th>
+            </tr></thead>
+            <tbody>
+                {% for row in portfolio_rows %}
+                {% set pnl = row.current_value - row.amount_invested %}
+                {% set roi = (pnl / row.amount_invested * 100) if row.amount_invested > 0 else 0 %}
+                <tr>
+                    <td><strong>{{ row.asset_name }}</strong></td>
+                    <td>{{ "%.2f"|format(row.amount_invested) }}</td>
+                    <td>{{ "%.2f"|format(row.current_value) }}</td>
+                    <td class="{{ 'pnl-positive' if pnl >= 0 else 'pnl-negative' }}">
+                        {{ "%+.2f"|format(pnl) }}
+                    </td>
+                    <td class="{{ 'pnl-positive' if roi >= 0 else 'pnl-negative' }}">
+                        {{ "%+.1f%%"|format(roi) }}
+                    </td>
+                    <td style="color:var(--text-secondary); font-size:0.82rem;">{{ row.last_updated }}</td>
+                    <td>
+                        <button class="checklist-del invest-del-btn" data-id="{{ row.id }}" title="Delete asset">✕</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">No assets tracked yet. Add your first investment above.</div>
+    {% endif %}
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <!-- PPK — ISOLATED RETIREMENT FUND (never in portfolio totals) -->
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <hr class="divider">
+    <div class="ppk-section">
+
+        <div class="ppk-section-header">
+            <span class="ppk-section-title">PPK — Pracownicze Plany Kapitałowe</span>
+            <span class="ppk-badge">Retirement Fund</span>
+            <span class="ppk-badge-isolated">Included in Net Worth · Excluded from Investment Portfolio</span>
+        </div>
+
+        <!-- Summary metrics -->
+        <div class="metrics-grid cols-4" style="margin-bottom:28px;">
+            <div class="ppk-metric-card">
+                <div class="metric-label">Total Contributed (Self)</div>
+                <div class="metric-value">{{ "%.2f"|format(ppk_total_employee) }} zł</div>
+            </div>
+            <div class="ppk-metric-card">
+                <div class="metric-label">Total Contributed (Employer + State)</div>
+                <div class="metric-value">{{ "%.2f"|format(ppk_total_employer_state) }} zł</div>
+            </div>
+            <div class="ppk-metric-card">
+                <div class="metric-label">Total Account Value</div>
+                <div class="metric-value">{{ "%.2f"|format(ppk_current_value) }} zł</div>
+                <div class="metric-delta" style="color:var(--text-secondary);">snapshot from latest entry</div>
+            </div>
+            <div class="ppk-metric-card">
+                <div class="metric-label">Total Growth (Value − All Contributions)</div>
+                {% if ppk_current_value > 0 %}
+                <div class="metric-value {{ 'pnl-positive' if ppk_profit >= 0 else 'pnl-negative' }}">
+                    {{ "%+.2f"|format(ppk_profit) }} zł
+                </div>
+                {% if ppk_total_contributions > 0 %}
+                <div class="metric-delta {{ 'pnl-positive' if ppk_profit >= 0 else 'pnl-negative' }}">
+                    {{ "%+.1f%%"|format(ppk_profit / ppk_total_contributions * 100) }} overall ROI
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="metric-value" style="color:var(--text-secondary); font-size:1.2rem;">—</div>
+                <div class="metric-delta" style="color:var(--text-secondary);">set account value to calculate</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Standalone PPK chart (completely separate from main portfolio chart) -->
+        {% if ppk_chart_data %}
+        <div class="chart-card" style="margin-bottom:28px;">
+            <canvas id="ppk-bar-chart" height="110"></canvas>
+        </div>
+        {% endif %}
+
+        <!-- Log new contribution form -->
+        <div class="ppk-form-card" style="margin-bottom:28px;">
+            <h3 class="section-subtitle">Log Monthly Contribution</h3>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px,1fr)); gap:12px; margin-bottom:16px;">
+                <div class="form-group">
+                    <label class="form-label">Date</label>
+                    <input type="text" id="ppk-date" placeholder="YYYY-MM-DD">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Employee Contribution (zł)</label>
+                    <input type="text" id="ppk-employee" placeholder="e.g. 150">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Employer Contribution (zł)</label>
+                    <input type="text" id="ppk-employer" placeholder="e.g. 75">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">State Bonus (zł, optional)</label>
+                    <input type="text" id="ppk-state" placeholder="e.g. 0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Current Account Value (zł)</label>
+                    <input type="text" id="ppk-value" placeholder="total fund value now">
+                </div>
+            </div>
+            <button type="button" class="btn btn-ppk" id="ppk-add-btn">+ Log Contribution</button>
+            <div id="ppk-alert" class="alert" style="display:none; margin-top:12px;"></div>
+        </div>
+
+        <!-- History table -->
+        {% if ppk_rows %}
+        <h3 class="section-subtitle">Contribution History</h3>
+        <div class="data-table-wrap" id="ppk-table-wrap">
+            <table>
+                <thead><tr>
+                    <th>Date</th>
+                    <th>Employee (zł)</th>
+                    <th>Employer (zł)</th>
+                    <th>State Bonus (zł)</th>
+                    <th>Account Value (zł)</th>
+                    <th></th>
+                </tr></thead>
+                <tbody>
+                    {% for row in ppk_rows %}
+                    <tr>
+                        <td>{{ row.date }}</td>
+                        <td>{{ "%.2f"|format(row.employee_contribution) }}</td>
+                        <td>{{ "%.2f"|format(row.employer_contribution) }}</td>
+                        <td>{{ "%.2f"|format(row.state_bonus) }}</td>
+                        <td>{% if row.current_account_value > 0 %}{{ "%.2f"|format(row.current_account_value) }}{% else %}<span style="color:var(--text-secondary);">—</span>{% endif %}</td>
+                        <td>
+                            <button class="ppk-del-btn" data-id="{{ row.id }}" title="Delete entry">✕</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info" style="border-left-color:var(--ppk-accent);">No PPK contributions logged yet. Use the form above to record your first monthly contribution.</div>
+        {% endif %}
+
+    </div><!-- /ppk-section -->
+
+</section>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Trend Lines Chart (Chart.js) ── */
+{% if trend_data %}
+(function () {
+    const trendData = {{ trend_data | tojson }};
+    const canvas = document.getElementById('trend-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const rs            = getComputedStyle(document.documentElement);
+    const accentPrimary = rs.getPropertyValue('--accent-primary').trim();
+    const textSecondary = rs.getPropertyValue('--text-secondary').trim();
+    const borderColor   = rs.getPropertyValue('--border-color').trim();
+    const bgSurface     = rs.getPropertyValue('--bg-surface').trim();
+    const textPrimary   = rs.getPropertyValue('--text-primary').trim();
+
+    /* Gradient height matches the wrapper's explicit 420px */
+    const GRAD_H = 420;
+
+    function makeGradient(r, g, b, alpha) {
+        const grad = ctx.createLinearGradient(0, 0, 0, GRAD_H);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${alpha ?? 0.18})`);
+        grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        return grad;
+    }
+
+    function parseRgb(s) {
+        const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (m) return [+m[1], +m[2], +m[3]];
+        const h = s.replace('#', '');
+        if (h.length === 6) return [
+            parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)
+        ];
+        return [59, 130, 246];
+    }
+    const [ar, ag, ab] = parseRgb(accentPrimary);
+
+    /* Vertical crosshair plugin */
+    const crosshairPlugin = {
+        id: 'verticalCrosshair',
+        afterDraw(chart) {
+            const tip = chart.tooltip;
+            if (!tip?._active?.length) return;
+            const x = tip._active[0].element.x;
+            const {top, bottom} = chart.scales.y;
+            const c = chart.ctx;
+            c.save();
+            c.beginPath();
+            c.moveTo(x, top);
+            c.lineTo(x, bottom);
+            c.lineWidth = 1;
+            c.strokeStyle = borderColor;
+            c.setLineDash([4, 4]);
+            c.stroke();
+            c.restore();
+        }
+    };
+
+    new Chart(ctx, {
+        type: 'line',
+        plugins: [crosshairPlugin],
+        data: {
+            labels: trendData.labels,
+            datasets: [
+                {
+                    label: 'Total Income',
+                    data: trendData.income,
+                    borderColor: '#10B981',
+                    backgroundColor: makeGradient(16, 185, 129),
+                    borderWidth: 2.5,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#10B981',
+                    pointHoverBorderColor: bgSurface,
+                    pointHoverBorderWidth: 2,
+                },
+                {
+                    label: 'Total Expenses',
+                    data: trendData.expenses,
+                    borderColor: '#EF4444',
+                    backgroundColor: makeGradient(239, 68, 68),
+                    borderWidth: 2.5,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#EF4444',
+                    pointHoverBorderColor: bgSurface,
+                    pointHoverBorderWidth: 2,
+                },
+                {
+                    label: 'Capital Invested Outflow',
+                    data: trendData.investments,
+                    borderColor: accentPrimary,
+                    backgroundColor: makeGradient(ar, ag, ab, 0.15),
+                    borderWidth: 2.5,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: accentPrimary,
+                    pointHoverBorderColor: bgSurface,
+                    pointHoverBorderWidth: 2,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            animation: { duration: 700, easing: 'easeInOutQuart' },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif", size: 12 },
+                        padding: 20,
+                        usePointStyle: true,
+                        pointStyleWidth: 14,
+                    },
+                },
+                title: {
+                    display: true,
+                    text: 'Monthly Financial Flow Progressions',
+                    color: textPrimary,
+                    font: { size: 15, weight: '700', family: "'Inter', sans-serif" },
+                    padding: { bottom: 24 },
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15,23,42,0.92)',
+                    titleColor: '#F9FAFB',
+                    bodyColor: '#CBD5E1',
+                    borderColor: 'rgba(255,255,255,0.08)',
+                    borderWidth: 1,
+                    padding: 12,
+                    cornerRadius: 8,
+                    titleFont: { family: "'Inter', sans-serif", weight: '600', size: 13 },
+                    bodyFont:  { family: "'Inter', sans-serif", size: 12 },
+                    callbacks: {
+                        label: (c) =>
+                            ` ${c.dataset.label}: ${Number(c.parsed.y).toLocaleString('pl-PL', {
+                                minimumFractionDigits: 2, maximumFractionDigits: 2
+                            })} zł`,
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif", size: 12 },
+                    },
+                    grid:   { color: borderColor, drawTicks: false },
+                    border: { color: borderColor },
+                },
+                y: {
+                    beginAtZero: false,
+                    grace: '5%',
+                    ticks: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif", size: 12 },
+                        callback: (v) => v.toLocaleString('pl-PL') + ' zł',
+                    },
+                    grid:   { color: borderColor, drawTicks: false },
+                    border: { color: borderColor },
+                },
+            },
+        },
+    });
+}());
+{% endif %}
+
+/* ── Analytics Dashboard Charts (Chart.js) ── */
+{% if analytics_data %}
+(function () {
+    const ad = {{ analytics_data | tojson }};
+
+    const rs            = getComputedStyle(document.documentElement);
+    const accentPrimary = rs.getPropertyValue('--accent-primary').trim();
+    const textSecondary = rs.getPropertyValue('--text-secondary').trim();
+    const borderColor   = rs.getPropertyValue('--border-color').trim();
+    const bgSurface     = rs.getPropertyValue('--bg-surface').trim();
+    const textPrimary   = rs.getPropertyValue('--text-primary').trim();
+
+    const GRAD_H = 300;
+
+    function parseRgb(s) {
+        const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (m) return [+m[1], +m[2], +m[3]];
+        const h = s.replace('#', '');
+        if (h.length === 6) return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+        return [59, 130, 246];
+    }
+    const [ar, ag, ab] = parseRgb(accentPrimary);
+
+    /* 5 % of the range as padding on both Y-axis ends */
+    function axisBounds(values, pad = 0.05) {
+        const v = values.filter(x => x != null && !isNaN(x));
+        if (!v.length) return {};
+        const mn = Math.min(...v), mx = Math.max(...v);
+        if (mn === mx) return { min: mn - 1, max: mx + 1 };
+        const span = mx - mn;
+        return { min: mn - span * pad, max: mx + span * pad };
+    }
+
+    const TIP = {
+        backgroundColor: 'rgba(15,23,42,0.92)',
+        titleColor:  '#F9FAFB',
+        bodyColor:   '#CBD5E1',
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        padding:     12,
+        cornerRadius: 8,
+        titleFont: { family: "'Inter', sans-serif", weight: '600', size: 13 },
+        bodyFont:  { family: "'Inter', sans-serif", size: 12 },
+    };
+
+    function fmtPLN(v) {
+        return Number(v).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' zł';
+    }
+
+    function xAxis() {
+        return {
+            ticks:  { color: textSecondary, font: { family: "'Inter', sans-serif", size: 11 } },
+            grid:   { color: borderColor, drawTicks: false },
+            border: { color: borderColor },
+        };
+    }
+
+    function yAxisPLN(bounds) {
+        return {
+            ...bounds,
+            ticks: {
+                color: textSecondary,
+                font:  { family: "'Inter', sans-serif", size: 11 },
+                callback: v => Number(v).toLocaleString('pl-PL', { maximumFractionDigits: 0 }) + ' zł',
+            },
+            grid:   { color: borderColor, drawTicks: false },
+            border: { color: borderColor },
+        };
+    }
+
+    function makeGrad(ctx, r, g, b, alpha) {
+        const g2 = ctx.createLinearGradient(0, 0, 0, GRAD_H);
+        g2.addColorStop(0, `rgba(${r},${g},${b},${alpha ?? 0.15})`);
+        g2.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        return g2;
+    }
+
+    /* Vertical crosshair shared across line charts */
+    const crosshairPlugin = {
+        id: 'adVCross',
+        afterDraw(chart) {
+            const tip = chart.tooltip;
+            if (!tip?._active?.length) return;
+            const x = tip._active[0].element.x;
+            const {top, bottom} = chart.scales.y;
+            const c = chart.ctx;
+            c.save();
+            c.beginPath();
+            c.moveTo(x, top);
+            c.lineTo(x, bottom);
+            c.lineWidth = 1;
+            c.strokeStyle = borderColor;
+            c.setLineDash([4, 4]);
+            c.stroke();
+            c.restore();
+        }
+    };
+
+    /* Zero-reference line for the MoM chart */
+    const zeroLinePlugin = {
+        id: 'adZeroLine',
+        afterDraw(chart) {
+            if (!chart.scales.y || !chart.chartArea) return;
+            const y0 = chart.scales.y.getPixelForValue(0);
+            const {top, bottom, left, right} = chart.chartArea;
+            if (y0 < top || y0 > bottom) return;
+            const c = chart.ctx;
+            c.save();
+            c.beginPath();
+            c.moveTo(left, y0);
+            c.lineTo(right, y0);
+            c.strokeStyle = 'rgba(100,116,139,0.55)';
+            c.lineWidth = 1.5;
+            c.setLineDash([4, 4]);
+            c.stroke();
+            c.restore();
+        }
+    };
+
+    /* ── Chart 1 · Monthly Expenses (bar) ── */
+    const cv1 = document.getElementById('chart-expenses');
+    if (cv1) {
+        new Chart(cv1, {
+            type: 'bar',
+            data: {
+                labels: ad.labels,
+                datasets: [{
+                    label: 'Monthly Expenses',
+                    data: ad.expenses,
+                    backgroundColor: 'rgba(239,68,68,0.72)',
+                    borderColor: '#EF4444',
+                    borderWidth: 1.5,
+                    borderRadius: 5,
+                    borderSkipped: false,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true, text: 'Monthly Expenses',
+                        color: textPrimary,
+                        font: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                        padding: { bottom: 16 },
+                    },
+                    tooltip: { ...TIP, callbacks: { label: c => ' ' + fmtPLN(c.parsed.y) } },
+                },
+                scales: { x: xAxis(), y: yAxisPLN(axisBounds(ad.expenses)) },
+            },
+        });
+    }
+
+    /* ── Chart 2 · Cumulative Savings (line + gradient) ── */
+    const cv2 = document.getElementById('chart-cumulative');
+    if (cv2) {
+        const ctx2 = cv2.getContext('2d');
+        new Chart(ctx2, {
+            type: 'line',
+            plugins: [crosshairPlugin],
+            data: {
+                labels: ad.labels,
+                datasets: [{
+                    label: 'Cumulative Savings',
+                    data: ad.cumulative,
+                    borderColor: accentPrimary,
+                    backgroundColor: makeGrad(ctx2, ar, ag, ab),
+                    borderWidth: 3,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: accentPrimary,
+                    pointHoverBorderColor: bgSurface,
+                    pointHoverBorderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                animation: { duration: 600, easing: 'easeInOutQuart' },
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true, text: 'Cumulative Savings',
+                        color: textPrimary,
+                        font: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                        padding: { bottom: 16 },
+                    },
+                    tooltip: { ...TIP, callbacks: { label: c => ' ' + fmtPLN(c.parsed.y) } },
+                },
+                scales: { x: xAxis(), y: yAxisPLN(axisBounds(ad.cumulative)) },
+            },
+        });
+    }
+
+    /* ── Chart 3 · Income vs Expenses (grouped bar) ── */
+    const cv3 = document.getElementById('chart-income-exp');
+    if (cv3) {
+        new Chart(cv3, {
+            type: 'bar',
+            data: {
+                labels: ad.labels,
+                datasets: [
+                    {
+                        label: 'Income',
+                        data: ad.income,
+                        backgroundColor: 'rgba(16,185,129,0.72)',
+                        borderColor: '#10B981',
+                        borderWidth: 1.5,
+                        borderRadius: 5,
+                        borderSkipped: false,
+                    },
+                    {
+                        label: 'Expenses',
+                        data: ad.expenses,
+                        backgroundColor: 'rgba(239,68,68,0.72)',
+                        borderColor: '#EF4444',
+                        borderWidth: 1.5,
+                        borderRadius: 5,
+                        borderSkipped: false,
+                    },
+                ],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: textSecondary,
+                            font: { family: "'Inter', sans-serif", size: 12 },
+                            padding: 16, usePointStyle: true, pointStyleWidth: 12,
+                        },
+                    },
+                    title: {
+                        display: true, text: 'Income vs. Expenses',
+                        color: textPrimary,
+                        font: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                        padding: { bottom: 16 },
+                    },
+                    tooltip: {
+                        ...TIP,
+                        callbacks: { label: c => ` ${c.dataset.label}: ${fmtPLN(c.parsed.y)}` },
+                    },
+                },
+                scales: {
+                    x: xAxis(),
+                    y: yAxisPLN(axisBounds([...ad.income, ...ad.expenses])),
+                },
+            },
+        });
+    }
+
+    /* ── Chart 4 · 50/30/20 Breakdown (stacked bar %) ── */
+    const cv4 = document.getElementById('chart-breakdown');
+    if (cv4) {
+        new Chart(cv4, {
+            type: 'bar',
+            data: {
+                labels: ad.labels,
+                datasets: [
+                    { label: 'Needs',       data: ad.needs,  backgroundColor: 'rgba(37,99,235,0.82)',  borderWidth: 0 },
+                    { label: 'Wants',       data: ad.wants,  backgroundColor: 'rgba(99,102,241,0.82)', borderWidth: 0 },
+                    { label: 'Investments', data: ad.invest, backgroundColor: 'rgba(16,185,129,0.82)', borderWidth: 0 },
+                ],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: textSecondary,
+                            font: { family: "'Inter', sans-serif", size: 12 },
+                            padding: 16, usePointStyle: true, pointStyleWidth: 12,
+                        },
+                    },
+                    title: {
+                        display: true, text: '50/30/20 Rule Breakdown',
+                        color: textPrimary,
+                        font: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                        padding: { bottom: 16 },
+                    },
+                    tooltip: {
+                        ...TIP,
+                        callbacks: { label: c => ` ${c.dataset.label}: ${Number(c.parsed.y).toFixed(1)}%` },
+                    },
+                },
+                scales: {
+                    x: { ...xAxis(), stacked: true },
+                    y: {
+                        stacked: true,
+                        min: 0, max: 100,
+                        ticks: {
+                            color: textSecondary,
+                            font: { family: "'Inter', sans-serif", size: 11 },
+                            callback: v => v + '%',
+                        },
+                        grid:   { color: borderColor, drawTicks: false },
+                        border: { color: borderColor },
+                    },
+                },
+            },
+        });
+    }
+
+    /* ── Chart 5 · Month-over-Month Expense Change (line) ── */
+    const cv5 = document.getElementById('chart-mom');
+    if (cv5) {
+        const ctx5   = cv5.getContext('2d');
+        const ptClrs = (ad.mom_values || []).map(v => v >= 0 ? 'rgba(239,68,68,0.9)' : 'rgba(16,185,129,0.9)');
+        new Chart(ctx5, {
+            type: 'line',
+            plugins: [crosshairPlugin, zeroLinePlugin],
+            data: {
+                labels: ad.mom_labels,
+                datasets: [{
+                    label: 'MoM Expense Change',
+                    data: ad.mom_values,
+                    borderColor: borderColor,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: false,
+                    pointRadius: 6,
+                    pointHoverRadius: 9,
+                    pointBackgroundColor: ptClrs,
+                    pointBorderColor: 'transparent',
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                animation: { duration: 600, easing: 'easeInOutQuart' },
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true, text: 'Month-over-Month Expense Change',
+                        color: textPrimary,
+                        font: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                        padding: { bottom: 16 },
+                    },
+                    tooltip: {
+                        ...TIP,
+                        callbacks: {
+                            label: c => {
+                                const v = Number(c.parsed.y);
+                                return ` ${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: xAxis(),
+                    y: {
+                        ...axisBounds(ad.mom_values || []),
+                        ticks: {
+                            color: textSecondary,
+                            font: { family: "'Inter', sans-serif", size: 11 },
+                            callback: v => (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%',
+                        },
+                        grid:   { color: borderColor, drawTicks: false },
+                        border: { color: borderColor },
+                    },
+                },
+            },
+        });
+    }
+}());
+{% endif %}
+
+/* ── PPK Standalone Contribution Chart (Chart.js) ── */
+{% if ppk_chart_data %}
+(function () {
+    const ppk = {{ ppk_chart_data | tojson }};
+    const rs  = getComputedStyle(document.documentElement);
+    const borderColor   = rs.getPropertyValue('--border-color').trim();
+    const textSecondary = rs.getPropertyValue('--text-secondary').trim();
+    const textPrimary   = rs.getPropertyValue('--text-primary').trim();
+    const ppkAccent     = rs.getPropertyValue('--ppk-accent').trim();
+
+    const canvas = document.getElementById('ppk-bar-chart');
+    if (!canvas) return;
+
+    new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: ppk.labels,
+            datasets: [
+                {
+                    label: 'Employee',
+                    data: ppk.employee,
+                    backgroundColor: ppkAccent + 'B3',
+                    borderColor: ppkAccent,
+                    borderWidth: 1.5,
+                    borderRadius: 5,
+                    borderSkipped: false,
+                },
+                {
+                    label: 'Employer + State',
+                    data: ppk.employer_state,
+                    backgroundColor: '#0D9488B3',
+                    borderColor: '#0D9488',
+                    borderWidth: 1.5,
+                    borderRadius: 5,
+                    borderSkipped: false,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif", size: 12 },
+                        padding: 18, usePointStyle: true, pointStyleWidth: 12,
+                    },
+                },
+                title: {
+                    display: true,
+                    text: 'PPK Monthly Contributions — Employee vs. Employer + State',
+                    color: textPrimary,
+                    font: { size: 13, weight: '700', family: "'Inter', sans-serif" },
+                    padding: { bottom: 16 },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) =>
+                            ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('pl-PL', { minimumFractionDigits: 2 })} zł`,
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { color: textSecondary, font: { family: "'Inter', sans-serif" } },
+                    grid:  { color: borderColor },
+                    border: { color: borderColor },
+                },
+                y: {
+                    ticks: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif" },
+                        callback: (v) => v.toLocaleString('pl-PL') + ' zł',
+                    },
+                    grid:  { color: borderColor },
+                    border: { color: borderColor },
+                },
+            },
+        },
+    });
+}());
+{% endif %}
+
+/* ── Investment Portfolio Chart (Chart.js) ── */
+{% if portfolio_rows %}
+(function () {
+    const rs  = getComputedStyle(document.documentElement);
+    const borderColor   = rs.getPropertyValue('--border-color').trim();
+    const textSecondary = rs.getPropertyValue('--text-secondary').trim();
+    const accentPrimary = rs.getPropertyValue('--accent-primary').trim();
+    const tealColor     = '#0D9488';
+
+    const labels   = {{ portfolio_rows | map(attribute='asset_name')   | list | tojson }};
+    const invested = {{ portfolio_rows | map(attribute='amount_invested') | list | tojson }};
+    const current  = {{ portfolio_rows | map(attribute='current_value')  | list | tojson }};
+
+    const canvas = document.getElementById('invest-bar-chart');
+    if (!canvas) return;
+
+    new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Amount Invested',
+                    data: invested,
+                    backgroundColor: accentPrimary + 'B3',
+                    borderColor: accentPrimary,
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    borderSkipped: false,
+                },
+                {
+                    label: 'Current Value',
+                    data: current,
+                    backgroundColor: tealColor + 'B3',
+                    borderColor: tealColor,
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    borderSkipped: false,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif", size: 13 },
+                        padding: 20,
+                    },
+                },
+                title: {
+                    display: true,
+                    text: 'Invested Capital vs. Current Market Value',
+                    color: textSecondary,
+                    font: { size: 14, weight: '600', family: "'Inter', sans-serif" },
+                    padding: { bottom: 16 },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) =>
+                            ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('pl-PL', { minimumFractionDigits: 2 })} zł`,
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { color: textSecondary, font: { family: "'Inter', sans-serif" } },
+                    grid:  { color: borderColor },
+                    border: { color: borderColor },
+                },
+                y: {
+                    ticks: {
+                        color: textSecondary,
+                        font: { family: "'Inter', sans-serif" },
+                        callback: (v) => v.toLocaleString('pl-PL') + ' zł',
+                    },
+                    grid:  { color: borderColor },
+                    border: { color: borderColor },
+                },
+            },
+        },
+    });
+}());
+{% endif %}
+</script>
+{% endblock %}

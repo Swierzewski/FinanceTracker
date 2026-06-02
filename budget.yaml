@@ -1,0 +1,19 @@
+base_balances:
+  Cash: 1144.53                   # 700PLN + 105.59EUR + 338.94USD
+  Main Debit (PKO): 13787.07
+  Revolut: 8132.73
+mandatory_expenses:
+- amount: 2133.0
+  name: Rent
+- amount: 81.84
+  name: Internet
+- amount: 45.0
+  name: Tmobile
+- amount: 34.0
+  name: Netflix + Spotify
+- amount: 4.99
+  name: Icloud
+rules:
+  investments: 20
+  needs: 50
+  wants: 30
