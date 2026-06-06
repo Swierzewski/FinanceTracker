@@ -41,7 +41,7 @@ def get_prompt(current_month_name, cards_str):
 
 def process_financial_input(nl_input, current_month_name, cards_str):
     extraction_prompt = get_prompt(current_month_name, cards_str)
-    response = ollama.chat(model='llama3', messages=[
+    response = ollama.chat(model='qwen2.5:1.5b', messages=[
         {'role': 'system', 'content': extraction_prompt},
         {'role': 'user', 'content': nl_input}
     ], format='json')
