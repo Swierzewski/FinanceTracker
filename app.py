@@ -9,7 +9,7 @@ import uuid
 import numpy as np
 import calendar
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-prod")
@@ -25,6 +25,8 @@ TRANSFERS_FILE  = f"{DATA_DIR}/transfers.csv"
 CHECKLIST_FILE  = f"{DATA_DIR}/checklist.json"
 PPK_FILE        = f"{DATA_DIR}/ppk.csv"   # Strictly isolated — never merged into portfolio totals
 YAML_FILE       = "budget.yaml"
+UNDO_BACKUP_CSV    = f"{DATA_DIR}/.undo_backup.csv"
+UNDO_BACKUP_TARGET = f"{DATA_DIR}/.undo_target.txt"
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -80,6 +82,11 @@ def load_portfolio():
         except pd.errors.EmptyDataError:
             pass
     return pd.DataFrame(columns=["id","asset_name","amount_invested","current_value","last_updated"])
+
+def _save_undo_backup(df, target_file):
+    df.to_csv(UNDO_BACKUP_CSV, index=False)
+    with open(UNDO_BACKUP_TARGET, "w") as f:
+        f.write(target_file)
 
 def load_ppk():
     if os.path.exists(PPK_FILE) and os.path.getsize(PPK_FILE) > 0:
@@ -435,8 +442,7 @@ def api_ai_entry():
                                         "Amount": amount, "Category": "General",
                                         "Rule_Bucket": bucket, "Card": card_used}])
             pd.concat([expenses_df, new_row], ignore_index=True).to_csv(EXPENSES_FILE, index=False)
-            session["backup_file"] = EXPENSES_FILE
-            session["backup_data"] = backup.to_json()
+            _save_undo_backup(backup, EXPENSES_FILE)
             _match_checklist(name)
             msg = helper.format_ai_response("flask","expense",amount,name,card_used=card_used,bucket=bucket)
 
@@ -446,8 +452,7 @@ def api_ai_entry():
             new_row   = pd.DataFrame([{"Date": date_str, "Month": month,
                                         "Source": name, "Amount": amount, "Card": card_used}])
             pd.concat([income_df, new_row], ignore_index=True).to_csv(INCOME_FILE, index=False)
-            session["backup_file"] = INCOME_FILE
-            session["backup_data"] = backup.to_json()
+            _save_undo_backup(backup, INCOME_FILE)
             msg = helper.format_ai_response("flask","income",amount,name,card_used=card_used)
 
         elif rtype == "transfer":
@@ -457,8 +462,7 @@ def api_ai_entry():
             new_row = pd.DataFrame([{"Date": date_str, "Month": month,
                                      "From_Card": f_card, "To_Card": t_card, "Amount": amount}])
             pd.concat([transfers_df, new_row], ignore_index=True).to_csv(TRANSFERS_FILE, index=False)
-            session["backup_file"] = TRANSFERS_FILE
-            session["backup_data"] = backup.to_json()
+            _save_undo_backup(backup, TRANSFERS_FILE)
             msg = helper.format_ai_response("flask","transfer",amount,name,f_card=f_card,t_card=t_card)
 
         elif rtype == "investment":
@@ -468,8 +472,7 @@ def api_ai_entry():
                                         "Amount": amount, "Category": "Investment",
                                         "Rule_Bucket": "Investments", "Card": card_used}])
             pd.concat([expenses_df, new_row], ignore_index=True).to_csv(EXPENSES_FILE, index=False)
-            session["backup_file"] = EXPENSES_FILE
-            session["backup_data"] = backup.to_json()
+            _save_undo_backup(backup, EXPENSES_FILE)
             _match_checklist(name)
             msg = helper.format_ai_response("flask","expense",amount,name,
                                             card_used=card_used, bucket="Investments")
@@ -485,15 +488,15 @@ def api_ai_entry():
 
 @app.route("/api/undo", methods=["POST"])
 def api_undo():
-    backup_file = session.get("backup_file")
-    backup_data = session.get("backup_data")
-    if not backup_file or backup_data is None:
+    if not os.path.exists(UNDO_BACKUP_TARGET) or not os.path.exists(UNDO_BACKUP_CSV):
         return jsonify(success=False, error="Nothing to undo.")
     try:
-        df = pd.read_json(backup_data)
-        df.to_csv(backup_file, index=False)
-        session.pop("backup_file", None)
-        session.pop("backup_data", None)
+        with open(UNDO_BACKUP_TARGET) as f:
+            target_file = f.read().strip()
+        df = pd.read_csv(UNDO_BACKUP_CSV)
+        df.to_csv(target_file, index=False)
+        os.remove(UNDO_BACKUP_CSV)
+        os.remove(UNDO_BACKUP_TARGET)
         return jsonify(success=True)
     except Exception as e:
         return jsonify(success=False, error=str(e))
