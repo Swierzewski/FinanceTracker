@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Data Editor — AI Finance Guard{% endblock %}
+
+{% block content %}
+<div style="padding-bottom: 32px;">
+    <h1 style="font-size:1.4rem; font-weight:700; color:var(--text-primary); margin-bottom:4px;">Data Editor</h1>
+    <p style="color:var(--text-secondary); font-size:0.875rem; margin-bottom:20px;">
+        Click any cell to edit inline. Add or delete rows, then hit <strong>Save</strong> to write changes to disk.
+    </p>
+
+    <!-- Table tabs -->
+    <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+        <button class="de-tab active" data-table="expenses">Expenses</button>
+        <button class="de-tab" data-table="income">Income</button>
+        <button class="de-tab" data-table="transfers">Transfers</button>
+    </div>
+
+    <!-- Toolbar -->
+    <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+        <button id="de-add-btn" class="btn" style="padding:7px 14px;">+ Add Row</button>
+        <button id="de-del-btn" class="btn btn-danger" style="padding:7px 14px;">Delete Selected</button>
+        <button id="de-save-btn" class="btn" style="margin-left:auto; background:var(--accent-primary); color:#fff; padding:7px 20px;">Save Changes</button>
+        <span id="de-status" style="font-size:0.8rem; color:var(--text-secondary); min-width:80px;"></span>
+    </div>
+
+    <!-- Tabulator container -->
+    <div id="de-table"></div>
+
+    <div id="de-alert" class="alert" style="display:none; margin-top:12px;"></div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet">
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+
+<style>
+/* Tab buttons */
+.de-tab {
+    padding: 6px 16px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-family: inherit;
+    color: var(--text-secondary);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.de-tab:hover { background: var(--bg-primary); }
+.de-tab.active {
+    background: var(--accent-primary);
+    color: #fff;
+    border-color: var(--accent-primary);
+}
+
+/* Tabulator theme overrides */
+.tabulator {
+    border: 1px solid var(--border-color) !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+    font-family: 'Inter', Roboto, sans-serif !important;
+    font-size: 0.85rem !important;
+    background: var(--bg-surface) !important;
+}
+.tabulator .tabulator-header {
+    background: var(--bg-primary) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+}
+.tabulator .tabulator-col-title {
+    font-weight: 600 !important;
+    color: var(--text-secondary) !important;
+    font-size: 0.78rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.tabulator-row {
+    border-bottom: 1px solid var(--border-color) !important;
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+}
+.tabulator-row.tabulator-row-even { background: var(--bg-primary) !important; }
+.tabulator-row:hover { background: var(--accent-light) !important; }
+.tabulator-row.tabulator-selected { background: var(--accent-light) !important; outline: 1px solid var(--accent-primary); }
+.tabulator-cell { padding: 8px 10px !important; }
+.tabulator-cell.tabulator-editing input,
+.tabulator-cell.tabulator-editing select {
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--accent-primary) !important;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+.tabulator-footer { background: var(--bg-primary) !important; border-top: 1px solid var(--border-color) !important; }
+.tabulator-placeholder { color: var(--text-secondary) !important; }
+
+/* List editor dropdown */
+.tabulator-edit-list {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+.tabulator-edit-list-item:hover { background: var(--accent-light) !important; }
+</style>
+
+<script>
+const CARD_NAMES = {{ card_names | tojson }};
+const MONTHS     = {{ months_list | tojson }};
+const RULE_BUCKETS = ["Needs", "Wants", "Investments"];
+const TODAY = new Date().toISOString().slice(0, 10);
+const THIS_MONTH = MONTHS[new Date().getMonth()];
+
+const COLUMNS = {
+    expenses: [
+        { title: "", formatter: "rowSelection", titleFormatter: "rowSelection",
+          hozAlign: "center", headerSort: false, width: 36, frozen: true },
+        { title: "Date",        field: "Date",        editor: "input",  width: 118, sorter: "date" },
+        { title: "Month",       field: "Month",       editor: "list",   width: 110,
+          editorParams: { values: MONTHS, autocomplete: true } },
+        { title: "Item",        field: "Item",        editor: "input",  minWidth: 160 },
+        { title: "Amount",      field: "Amount",      editor: "number", hozAlign: "right", width: 100,
+          sorter: "number", editorParams: { step: 0.01 },
+          formatter: v => parseFloat(v.getValue() || 0).toFixed(2) },
+        { title: "Category",    field: "Category",    editor: "input",  width: 110 },
+        { title: "Rule Bucket", field: "Rule_Bucket", editor: "list",   width: 130,
+          editorParams: { values: RULE_BUCKETS } },
+        { title: "Card",        field: "Card",        editor: "list",   minWidth: 160,
+          editorParams: { values: CARD_NAMES, autocomplete: true } },
+    ],
+    income: [
+        { title: "", formatter: "rowSelection", titleFormatter: "rowSelection",
+          hozAlign: "center", headerSort: false, width: 36, frozen: true },
+        { title: "Date",   field: "Date",   editor: "input",  width: 118, sorter: "date" },
+        { title: "Month",  field: "Month",  editor: "list",   width: 110,
+          editorParams: { values: MONTHS, autocomplete: true } },
+        { title: "Source", field: "Source", editor: "input",  minWidth: 200 },
+        { title: "Amount", field: "Amount", editor: "number", hozAlign: "right", width: 100,
+          sorter: "number", editorParams: { step: 0.01 },
+          formatter: v => parseFloat(v.getValue() || 0).toFixed(2) },
+        { title: "Card",   field: "Card",   editor: "list",   minWidth: 160,
+          editorParams: { values: CARD_NAMES, autocomplete: true } },
+    ],
+    transfers: [
+        { title: "", formatter: "rowSelection", titleFormatter: "rowSelection",
+          hozAlign: "center", headerSort: false, width: 36, frozen: true },
+        { title: "Date",      field: "Date",      editor: "input", width: 118, sorter: "date" },
+        { title: "Month",     field: "Month",     editor: "list",  width: 110,
+          editorParams: { values: MONTHS, autocomplete: true } },
+        { title: "From Card", field: "From_Card", editor: "list",  minWidth: 160,
+          editorParams: { values: CARD_NAMES, autocomplete: true } },
+        { title: "To Card",   field: "To_Card",   editor: "list",  minWidth: 160,
+          editorParams: { values: CARD_NAMES, autocomplete: true } },
+        { title: "Amount",    field: "Amount",    editor: "number", hozAlign: "right", width: 100,
+          sorter: "number", editorParams: { step: 0.01 },
+          formatter: v => parseFloat(v.getValue() || 0).toFixed(2) },
+    ],
+};
+
+const DEFAULT_ROW = {
+    expenses:  { Date: TODAY, Month: THIS_MONTH, Item: "", Amount: 0, Category: "General", Rule_Bucket: "Wants", Card: CARD_NAMES[0] },
+    income:    { Date: TODAY, Month: THIS_MONTH, Source: "", Amount: 0, Card: CARD_NAMES[0] },
+    transfers: { Date: TODAY, Month: THIS_MONTH, From_Card: CARD_NAMES[0], To_Card: CARD_NAMES.length > 1 ? CARD_NAMES[1] : CARD_NAMES[0], Amount: 0 },
+};
+
+let currentTable = "expenses";
+let tabulator = null;
+
+function showAlert(msg, type = "success") {
+    const el = document.getElementById("de-alert");
+    el.className = `alert alert-${type === "danger" ? "error" : type}`;
+    el.textContent = msg;
+    el.style.display = "block";
+    setTimeout(() => { el.style.display = "none"; }, 5000);
+}
+
+function setStatus(msg) {
+    document.getElementById("de-status").textContent = msg;
+}
+
+async function loadTable(name) {
+    setStatus("Loading…");
+    const res  = await fetch(`/api/data/${name}`);
+    const data = await res.json();
+    if (!data.success) { showAlert(data.error, "danger"); setStatus(""); return; }
+
+    if (tabulator) { tabulator.destroy(); tabulator = null; }
+
+    tabulator = new Tabulator("#de-table", {
+        data:        data.rows,
+        columns:     COLUMNS[name],
+        layout:      "fitColumns",
+        selectable:  true,
+        height:      "calc(100vh - 310px)",
+        placeholder: "No rows yet — click '+ Add Row' to get started.",
+    });
+
+    setStatus(`${data.rows.length} rows`);
+}
+
+document.querySelectorAll(".de-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+        document.querySelectorAll(".de-tab").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentTable = btn.dataset.table;
+        loadTable(currentTable);
+    });
+});
+
+document.getElementById("de-add-btn").addEventListener("click", () => {
+    if (!tabulator) return;
+    tabulator.addRow({ ...DEFAULT_ROW[currentTable] }, false);
+    setStatus("Unsaved changes");
+});
+
+document.getElementById("de-del-btn").addEventListener("click", () => {
+    if (!tabulator) return;
+    const selected = tabulator.getSelectedRows();
+    if (!selected.length) { showAlert("Select one or more rows first (click the checkbox).", "info"); return; }
+    selected.forEach(r => r.delete());
+    setStatus("Unsaved changes");
+});
+
+document.getElementById("de-save-btn").addEventListener("click", async () => {
+    if (!tabulator) return;
+    setStatus("Saving…");
+    const rows = tabulator.getData();
+    try {
+        const res  = await fetch(`/api/data/${currentTable}/save`, {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ rows }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showAlert(`Saved ${data.saved} rows to ${currentTable}.csv`, "success");
+            setStatus(`${data.saved} rows saved`);
+        } else {
+            showAlert(data.error, "danger");
+            setStatus("Save failed");
+        }
+    } catch (e) {
+        showAlert(`Network error: ${e}`, "danger");
+        setStatus("Save failed");
+    }
+});
+
+loadTable("expenses");
+</script>
+{% endblock %}

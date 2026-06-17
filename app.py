@@ -6,6 +6,8 @@ import yaml
 import os
 import json
 import uuid
+import csv
+import io
 import numpy as np
 import calendar
 from datetime import datetime
@@ -75,13 +77,18 @@ def load_all():
         load_data(TRANSFERS_FILE, ["Date","Month","From_Card","To_Card","Amount"]),
     )
 
+ASSET_TYPES = ["Stocks", "ETF", "Crypto", "Bonds", "Cash", "Real Estate", "Other"]
+
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE) and os.path.getsize(PORTFOLIO_FILE) > 0:
         try:
-            return pd.read_csv(PORTFOLIO_FILE)
+            df = pd.read_csv(PORTFOLIO_FILE)
+            if "asset_type" not in df.columns:
+                df.insert(1, "asset_type", "Other")
+            return df
         except pd.errors.EmptyDataError:
             pass
-    return pd.DataFrame(columns=["id","asset_name","amount_invested","current_value","last_updated"])
+    return pd.DataFrame(columns=["id","asset_name","asset_type","amount_invested","current_value","last_updated"])
 
 def _save_undo_backup(df, target_file):
     df.to_csv(UNDO_BACKUP_CSV, index=False)
@@ -277,11 +284,20 @@ def index():
     portfolio_pnl      = round(portfolio_current - portfolio_invested, 2)
     portfolio_rows     = portfolio_df.to_dict("records") if not portfolio_df.empty else []
 
+    portfolio_by_type = {}
+    for row in portfolio_rows:
+        t = (row.get("asset_type") or "Other")
+        if t not in portfolio_by_type:
+            portfolio_by_type[t] = {"invested": 0.0, "current": 0.0}
+        portfolio_by_type[t]["invested"] += float(row.get("amount_invested", 0))
+        portfolio_by_type[t]["current"]  += float(row.get("current_value",  0))
+
     total_invested    = portfolio_current
 
     # ── PPK (isolated — included in net worth but never in portfolio totals) ───
     ppk_df = load_ppk()
     if not ppk_df.empty:
+        ppk_df = ppk_df.sort_values("date").reset_index(drop=True)
         ppk_total_employee       = float(ppk_df["employee_contribution"].sum())
         ppk_total_employer_state = float(
             (ppk_df["employer_contribution"] + ppk_df["state_bonus"]).sum()
@@ -319,7 +335,7 @@ def index():
     invest_rows = invest_df.to_dict("records") if not invest_df.empty else []
 
     checklist_data          = load_checklist()
-    checklist_items         = checklist_data["items"]
+    checklist_items         = sorted(checklist_data["items"], key=lambda x: x["due_day"])
     checklist_notifications = get_checklist_notifications(checklist_items)
 
     return render_template(
@@ -347,6 +363,8 @@ def index():
         ppk_profit                   = ppk_profit,
         ppk_rows                     = ppk_rows,
         ppk_chart_data               = ppk_chart_data,
+        portfolio_by_type            = portfolio_by_type,
+        asset_types                  = ASSET_TYPES,
     )
 
 # ── API: monthly data ─────────────────────────────────────────────────────────
@@ -486,6 +504,8 @@ def api_ai_entry():
 
 # ── API: undo ─────────────────────────────────────────────────────────────────
 
+_UNDO_ALLOWED = {EXPENSES_FILE, INCOME_FILE, TRANSFERS_FILE}
+
 @app.route("/api/undo", methods=["POST"])
 def api_undo():
     if not os.path.exists(UNDO_BACKUP_TARGET) or not os.path.exists(UNDO_BACKUP_CSV):
@@ -493,6 +513,8 @@ def api_undo():
     try:
         with open(UNDO_BACKUP_TARGET) as f:
             target_file = f.read().strip()
+        if target_file not in _UNDO_ALLOWED:
+            return jsonify(success=False, error="Invalid undo target.")
         df = pd.read_csv(UNDO_BACKUP_CSV)
         df.to_csv(target_file, index=False)
         os.remove(UNDO_BACKUP_CSV)
@@ -518,10 +540,15 @@ def api_investments_add():
     if amount_invested <= 0:
         return jsonify(success=False, error="Amount invested must be positive.")
 
+    asset_type = (data.get("asset_type") or "Other").strip()
+    if asset_type not in ASSET_TYPES:
+        asset_type = "Other"
+
     portfolio_df = load_portfolio()
     new_row = pd.DataFrame([{
         "id":              str(uuid.uuid4()),
         "asset_name":      asset_name,
+        "asset_type":      asset_type,
         "amount_invested": round(amount_invested, 2),
         "current_value":   round(current_value,   2),
         "last_updated":    datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -639,6 +666,224 @@ def api_checklist_toggle(item_id):
             break
     _save_checklist(checklist_data)
     return jsonify(success=True)
+
+# ── API: bulk import ──────────────────────────────────────────────────────────
+
+@app.route("/api/bulk_import", methods=["POST"])
+def api_bulk_import():
+    data    = request.get_json(force=True)
+    content = (data.get("content") or "").strip()
+    fmt     = (data.get("format")  or "auto").strip().lower()
+
+    if not content:
+        return jsonify(success=False, error="No content provided.")
+
+    current_month = MONTHS_LIST[datetime.now().month - 1]
+    cards_str     = ", ".join(card_names)
+    today_str     = datetime.now().strftime("%Y-%m-%d")
+
+    # ── Detect format and parse entries: list of (nl_text, date_str) ──────────
+    entries = []
+
+    if fmt == "auto":
+        lines = [l.strip() for l in content.splitlines()
+                 if l.strip() and not l.strip().startswith("#")]
+        first = lines[0] if lines else ""
+        if "," in first and any(k in first.lower() for k in ("description","item","amount","name")):
+            fmt = "csv"
+        else:
+            fmt = "text"
+
+    if fmt == "csv":
+        reader = csv.DictReader(io.StringIO(content))
+        for row in reader:
+            desc   = (row.get("description") or row.get("item") or row.get("name") or "").strip()
+            amount = (row.get("amount") or "").strip()
+            card   = (row.get("card")   or "").strip()
+            date   = (row.get("date")   or "").strip()
+            parts  = [p for p in [desc, amount, card] if p]
+            nl     = " ".join(parts)
+            if nl:
+                entries.append((nl, date or today_str))
+    else:
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("- ") or line.startswith("* "):
+                line = line[2:].strip()
+            if line:
+                entries.append((line, today_str))
+
+    if not entries:
+        return jsonify(success=False, error="No valid entries found in content.")
+
+    expenses_df, _, income_df, transfers_df = load_all()
+
+    results, errors = [], []
+    expenses_modified = income_modified = transfers_modified = False
+
+    for nl_text, entry_date in entries:
+        try:
+            try:
+                dt          = datetime.strptime(entry_date, "%Y-%m-%d")
+                entry_month = MONTHS_LIST[dt.month - 1]
+            except ValueError:
+                entry_month = current_month
+                entry_date  = today_str
+
+            extracted = helper.process_financial_input(nl_text, entry_month, cards_str)
+
+            rtype  = extracted.get("type")
+            amount = float(extracted.get("amount", 0.0))
+            name   = extracted.get("name", "Unknown")
+            month  = extracted.get("month", entry_month)
+
+            if rtype == "expense":
+                card_used = extracted.get("card", card_names[0])
+                bucket    = extracted.get("rule_bucket", "Wants")
+                new_row   = pd.DataFrame([{"Date": entry_date, "Month": month, "Item": name,
+                                           "Amount": amount, "Category": "General",
+                                           "Rule_Bucket": bucket, "Card": card_used}])
+                expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
+                expenses_modified = True
+                _match_checklist(name)
+                results.append(f"Expense: {name} — {amount}zł ({bucket}) on {card_used}")
+
+            elif rtype == "income":
+                card_used = extracted.get("card", card_names[0])
+                new_row   = pd.DataFrame([{"Date": entry_date, "Month": month,
+                                           "Source": name, "Amount": amount, "Card": card_used}])
+                income_df = pd.concat([income_df, new_row], ignore_index=True)
+                income_modified = True
+                results.append(f"Income: {name} — {amount}zł to {card_used}")
+
+            elif rtype == "transfer":
+                f_card  = extracted.get("from_card", card_names[0])
+                t_card  = extracted.get("to_card",   card_names[-1])
+                new_row = pd.DataFrame([{"Date": entry_date, "Month": month,
+                                         "From_Card": f_card, "To_Card": t_card, "Amount": amount}])
+                transfers_df = pd.concat([transfers_df, new_row], ignore_index=True)
+                transfers_modified = True
+                results.append(f"Transfer: {amount}zł from {f_card} to {t_card}")
+
+            elif rtype == "investment":
+                card_used = extracted.get("card", card_names[0])
+                new_row   = pd.DataFrame([{"Date": entry_date, "Month": month, "Item": name,
+                                           "Amount": amount, "Category": "Investment",
+                                           "Rule_Bucket": "Investments", "Card": card_used}])
+                expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
+                expenses_modified = True
+                results.append(f"Investment: {name} — {amount}zł on {card_used}")
+
+            else:
+                errors.append(f"Unknown type for: {nl_text[:50]!r}")
+
+        except Exception as e:
+            errors.append(f"Failed '{nl_text[:40]}': {e}")
+
+    if results:
+        try:
+            if expenses_modified:
+                expenses_df.to_csv(EXPENSES_FILE,   index=False)
+            if income_modified:
+                income_df.to_csv(INCOME_FILE,       index=False)
+            if transfers_modified:
+                transfers_df.to_csv(TRANSFERS_FILE, index=False)
+        except Exception as e:
+            return jsonify(success=False, error=f"Failed to save data: {e}")
+
+    return jsonify(
+        success  = True,
+        imported = len(results),
+        failed   = len(errors),
+        results  = results,
+        errors   = errors,
+    )
+
+
+# ── Monthly PDF report ────────────────────────────────────────────────────────
+
+@app.route("/report/<month>")
+def monthly_report(month):
+    if month not in MONTHS_LIST:
+        return "Invalid month", 404
+    expenses_df, _, income_df, _ = load_all()
+
+    m_exp_df = expenses_df[expenses_df["Month"] == month].copy() if not expenses_df.empty else pd.DataFrame()
+    m_inc_df = income_df[income_df["Month"]     == month].copy() if not income_df.empty   else pd.DataFrame()
+
+    # Ensure Amount is numeric so Jinja "%.2f" formatting never crashes on string values
+    for df in (m_exp_df, m_inc_df):
+        if not df.empty and "Amount" in df.columns:
+            df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0)
+
+    m_income   = float(m_inc_df["Amount"].sum()) if not m_inc_df.empty else 0.0
+    m_expenses = float(m_exp_df["Amount"].sum()) if not m_exp_df.empty else 0.0
+    m_savings  = round(m_income - m_expenses, 2)
+
+    rule_totals = m_exp_df.groupby("Rule_Bucket")["Amount"].sum().to_dict() if not m_exp_df.empty else {}
+
+    portfolio_df   = load_portfolio()
+    portfolio_rows = portfolio_df.to_dict("records") if not portfolio_df.empty else []
+
+    return render_template(
+        "report.html",
+        month          = month,
+        m_income       = round(m_income,   2),
+        m_expenses     = round(m_expenses, 2),
+        m_savings      = m_savings,
+        needs          = round(rule_totals.get("Needs",       0), 2),
+        wants          = round(rule_totals.get("Wants",       0), 2),
+        invest         = round(rule_totals.get("Investments", 0), 2),
+        exp_rows       = m_exp_df.to_dict("records") if not m_exp_df.empty else [],
+        inc_rows       = m_inc_df.to_dict("records") if not m_inc_df.empty else [],
+        portfolio_rows = portfolio_rows,
+        generated_at   = datetime.now().strftime("%Y-%m-%d %H:%M"),
+    )
+
+# ── Data editor page ──────────────────────────────────────────────────────────
+
+_DATA_TABLES = {
+    "expenses":  (EXPENSES_FILE,  ["Date","Month","Item","Amount","Category","Rule_Bucket","Card"]),
+    "income":    (INCOME_FILE,    ["Date","Month","Source","Amount","Card"]),
+    "transfers": (TRANSFERS_FILE, ["Date","Month","From_Card","To_Card","Amount"]),
+}
+
+@app.route("/data")
+def data_page():
+    return render_template("data.html", card_names=card_names, months_list=MONTHS_LIST)
+
+@app.route("/api/data/<table>")
+def api_data_get(table):
+    if table not in _DATA_TABLES:
+        return jsonify(success=False, error="Unknown table"), 404
+    filepath, columns = _DATA_TABLES[table]
+    df = load_data(filepath, columns)
+    return jsonify(success=True, rows=df.to_dict("records"), columns=columns)
+
+@app.route("/api/data/<table>/save", methods=["POST"])
+def api_data_save(table):
+    if table not in _DATA_TABLES:
+        return jsonify(success=False, error="Unknown table"), 404
+    filepath, columns = _DATA_TABLES[table]
+    data = request.get_json(force=True)
+    rows = data.get("rows")
+    if rows is None:
+        return jsonify(success=False, error="Missing 'rows' field.")
+    try:
+        df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=columns)
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ""
+        df = df[columns]
+        if "Amount" in df.columns and not df.empty:
+            df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0).round(2)
+        df.to_csv(filepath, index=False)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
+    return jsonify(success=True, saved=len(df))
+
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

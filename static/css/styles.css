@@ -76,6 +76,17 @@ body {
     letter-spacing: -0.02em;
 }
 .topbar-icon { font-size: 1.2rem; }
+.topbar-nav-link {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+}
+.topbar-nav-link:hover { background: var(--accent-light); color: var(--accent-primary); }
+.topbar-nav-link.active { background: var(--accent-light); color: var(--accent-primary); font-weight: 600; }
 
 /* ── Sidebar ── */
 .sidebar {
@@ -102,6 +113,29 @@ body {
 .sidebar p.sidebar-desc {
     font-size: 0.875rem;
     color: var(--text-secondary);
+}
+
+/* ── Merged entry sidebar ── */
+.sidebar-entry-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+    margin-top: 5px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+.sidebar-file-label {
+    padding: 8px 14px;
+    flex-shrink: 0;
+    font-size: 0.82rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.sidebar-file-label:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
 /* ── Main Content ── */
@@ -189,6 +223,8 @@ h3.section-subtitle {
     gap: 16px;
     margin-bottom: 24px;
 }
+/* Fallback for any cols-N not explicitly listed (e.g. 5+ cards) */
+.metrics-grid[class*="cols-"] { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .metrics-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
 .metrics-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
 .metrics-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
@@ -256,6 +292,32 @@ h3.section-subtitle {
 @media (prefers-color-scheme: dark) {
     .pnl-positive { color: #34D399; }
     .pnl-negative { color: #F87171; }
+}
+
+/* ── Asset Type Badges ── */
+.asset-type-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 99px;
+    white-space: nowrap;
+}
+.asset-type-Stocks       { background: #DBEAFE; color: #1E40AF; }
+.asset-type-ETF          { background: #CCFBF1; color: #0F766E; }
+.asset-type-Crypto       { background: #FEF3C7; color: #92400E; }
+.asset-type-Bonds        { background: #D1FAE5; color: #065F46; }
+.asset-type-Cash         { background: #F3F4F6; color: #374151; }
+.asset-type-Real-Estate  { background: #EDE9FE; color: #5B21B6; }
+.asset-type-Other        { background: #F3F4F6; color: #6B7280; }
+@media (prefers-color-scheme: dark) {
+    .asset-type-Stocks      { background: #1E3A8A; color: #93C5FD; }
+    .asset-type-ETF         { background: #134E4A; color: #5EEAD4; }
+    .asset-type-Crypto      { background: #451A03; color: #FCD34D; }
+    .asset-type-Bonds       { background: #064E3B; color: #6EE7B7; }
+    .asset-type-Cash        { background: #1F2937; color: #9CA3AF; }
+    .asset-type-Real-Estate { background: #2E1065; color: #C4B5FD; }
+    .asset-type-Other       { background: #1F2937; color: #9CA3AF; }
 }
 
 /* ── Buttons ── */
@@ -332,11 +394,13 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 .alert-success { background: rgba(16,185,129,.12); color: #065F46; border: 1px solid rgba(16,185,129,.3); }
 .alert-error   { background: rgba(239,68,68,.12);  color: #991B1B; border: 1px solid rgba(239,68,68,.3); }
 .alert-info    { background: var(--accent-light);  color: var(--accent-primary); border: 1px solid rgba(37,99,235,.3); }
+.alert-warning { background: rgba(245,158,11,.12); color: #92400E; border: 1px solid rgba(245,158,11,.3); }
 
 @media (prefers-color-scheme: dark) {
     .alert-success { color: #6EE7B7; }
     .alert-error   { color: #FCA5A5; }
     .alert-info    { color: var(--accent-hover); }
+    .alert-warning { color: #FCD34D; }
 }
 
 /* ── Data Table ── */

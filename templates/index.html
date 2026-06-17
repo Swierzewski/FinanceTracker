@@ -56,7 +56,7 @@
             <div class="metric-value">{{ "%.2f"|format(total_liquid_cash) }} zł</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">Total Invested Portfolio</div>
+            <div class="metric-label">Portfolio Current Value</div>
             <div class="metric-value">{{ "%.2f"|format(total_invested) }} zł</div>
         </div>
     </div>
@@ -101,13 +101,22 @@
 
     <h2 class="section-title">Detailed Monthly View</h2>
 
-    <div class="form-group" style="max-width:220px; margin-bottom:24px;">
-        <label class="form-label" for="month-select">Select Month</label>
-        <select id="month-select">
-            {% for m in months_list %}
-            <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>
-            {% endfor %}
-        </select>
+    <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
+        <div class="form-group" style="max-width:220px; margin-bottom:0;">
+            <label class="form-label" for="month-select">Select Month</label>
+            <select id="month-select">
+                {% for m in months_list %}
+                <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <a id="export-pdf-btn" href="/report/{{ current_month }}" target="_blank"
+           style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px;
+                  background:var(--accent-primary); color:#fff; border-radius:7px;
+                  font-size:0.85rem; font-weight:600; text-decoration:none;
+                  transition:opacity 0.15s;">
+            🖨 Export PDF
+        </a>
     </div>
 
     <!-- Summary metrics — populated via JS -->
@@ -145,7 +154,14 @@
 
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
         <div>
-            <h3 class="section-subtitle">Expenses this Month</h3>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                <h3 class="section-subtitle" style="margin:0;">Expenses this Month</h3>
+                <input id="exp-search" type="text" placeholder="Search…"
+                    style="margin-left:auto; padding:5px 10px; font-size:0.8rem;
+                           border:1px solid var(--border-color); border-radius:6px;
+                           background:var(--bg-surface); color:var(--text-primary);
+                           width:140px; outline:none;">
+            </div>
             <div class="data-table-wrap">
                 <table>
                     <thead><tr>
@@ -154,9 +170,17 @@
                     <tbody id="exp-table"></tbody>
                 </table>
             </div>
+            <div id="exp-search-count" style="font-size:0.75rem; color:var(--text-secondary); margin-top:6px; display:none;"></div>
         </div>
         <div>
-            <h3 class="section-subtitle">Income this Month</h3>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                <h3 class="section-subtitle" style="margin:0;">Income this Month</h3>
+                <input id="inc-search" type="text" placeholder="Search…"
+                    style="margin-left:auto; padding:5px 10px; font-size:0.8rem;
+                           border:1px solid var(--border-color); border-radius:6px;
+                           background:var(--bg-surface); color:var(--text-primary);
+                           width:140px; outline:none;">
+            </div>
             <div class="data-table-wrap">
                 <table>
                     <thead><tr>
@@ -165,6 +189,7 @@
                     <tbody id="inc-table"></tbody>
                 </table>
             </div>
+            <div id="inc-search-count" style="font-size:0.75rem; color:var(--text-secondary); margin-top:6px; display:none;"></div>
         </div>
     </div>
 
@@ -249,6 +274,14 @@
                     <input type="text" id="inv-asset-name" placeholder="e.g. AAPL, BTC, VOO ETF">
                 </div>
                 <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label">Asset Type</label>
+                    <select id="inv-asset-type">
+                        {% for t in asset_types %}
+                        <option value="{{ t }}">{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
                     <label class="form-label">Amount Invested (zł)</label>
                     <input type="text" id="inv-amount" placeholder="e.g. 5000">
                 </div>
@@ -287,10 +320,28 @@
     <!-- Holdings table -->
     {% if portfolio_rows %}
     <h3 class="section-subtitle">Portfolio Holdings</h3>
+
+    {% if portfolio_by_type %}
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+        {% for t, vals in portfolio_by_type.items() %}
+        {% set type_class = t | replace(' ', '-') %}
+        <div style="border:1px solid var(--border-color); border-radius:8px; padding:10px 14px; min-width:130px;">
+            <div style="font-size:0.68rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-secondary); margin-bottom:4px;">{{ t }}</div>
+            <div style="font-size:1rem; font-weight:700;">{{ "%.0f"|format(vals.current) }} zł</div>
+            {% set type_pnl = vals.current - vals.invested %}
+            <div style="font-size:0.72rem; color:{% if type_pnl >= 0 %}#059669{% else %}#DC2626{% endif %}; margin-top:2px;">
+                {{ "%+.1f%%"|format(type_pnl / vals.invested * 100) if vals.invested > 0 else '—' }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="data-table-wrap" id="portfolio-table-wrap">
         <table>
             <thead><tr>
                 <th>Asset</th>
+                <th>Type</th>
                 <th>Invested (zł)</th>
                 <th>Current Value (zł)</th>
                 <th>P&amp;L (zł)</th>
@@ -302,8 +353,11 @@
                 {% for row in portfolio_rows %}
                 {% set pnl = row.current_value - row.amount_invested %}
                 {% set roi = (pnl / row.amount_invested * 100) if row.amount_invested > 0 else 0 %}
+                {% set atype = (row.asset_type or 'Other') %}
+                {% set type_class = atype | replace(' ', '-') %}
                 <tr>
                     <td><strong>{{ row.asset_name }}</strong></td>
+                    <td><span class="asset-type-badge asset-type-{{ type_class }}">{{ atype }}</span></td>
                     <td>{{ "%.2f"|format(row.amount_invested) }}</td>
                     <td>{{ "%.2f"|format(row.current_value) }}</td>
                     <td class="{{ 'pnl-positive' if pnl >= 0 else 'pnl-negative' }}">

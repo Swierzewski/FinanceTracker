@@ -83,41 +83,108 @@ function _scheduleAlertHide(msRemaining) {
     } catch { _clearAlert(); }
 }());
 
-/* ── AI Entry Form (AJAX) ── */
+/* ── Unified AI entry + bulk import form ── */
+
+// Mode indicator: update the label as the user types
+const _nlInput   = document.getElementById('nl-input');
+const _modeLabel = document.getElementById('entry-mode-label');
+
+function _countEntryLines(text) {
+    return text.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+}
+function _updateModeLabel() {
+    if (!_modeLabel || !_nlInput) return;
+    const n = _countEntryLines(_nlInput.value);
+    if (n === 0)      _modeLabel.textContent = '';
+    else if (n === 1) _modeLabel.textContent = 'Single entry';
+    else              _modeLabel.textContent = `Bulk · ${n} entries`;
+}
+_nlInput?.addEventListener('input', () => {
+    _updateModeLabel();
+    // Hide file chip once the user manually edits the textarea
+    const fileChip = document.getElementById('file-chip');
+    if (fileChip) fileChip.style.display = 'none';
+});
+
 const aiForm = document.getElementById('ai-entry-form');
 if (aiForm) {
     aiForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const input = document.getElementById('nl-input').value.trim();
+        const input = _nlInput?.value.trim() || '';
         if (!input) return;
 
-        // A new submission replaces any previous undo/alert state
         _clearUndoPending();
         _clearAlert();
-        showSpinner();
         clearAlert('ai-alert');
+        const resultsEl = document.getElementById('bulk-results');
+        if (resultsEl) resultsEl.style.display = 'none';
 
-        try {
-            const res  = await fetch('/api/ai_entry', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ text: input }),
-            });
-            const data = await res.json();
-            hideSpinner();
+        const lineCount = _countEntryLines(input);
+        const isMulti   = lineCount > 1;
 
-            if (data.success) {
-                showAlert('ai-alert', data.message, 'success');
-                document.getElementById('nl-input').value = '';
-                _setUndoPending();
-                _saveAlert(data.message, 'success'); // persist across the reload below
-                setTimeout(() => location.reload(), 1200);
-            } else {
-                showAlert('ai-alert', data.error || 'Processing failed.', 'error');
+        showSpinner();
+
+        if (isMulti) {
+            // ── Bulk path ──────────────────────────────────────────────────
+            try {
+                const res  = await fetch('/api/bulk_import', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ content: input, format: 'auto' }),
+                });
+                const data = await res.json();
+                hideSpinner();
+
+                if (data.success) {
+                    const plural = data.imported === 1 ? 'entry' : 'entries';
+                    const msg    = `${data.imported} ${plural} imported${data.failed > 0 ? `, ${data.failed} failed` : ''}.`;
+                    showAlert('ai-alert', msg, data.failed > 0 ? 'warning' : 'success');
+
+                    if (resultsEl && (data.results.length || data.errors.length)) {
+                        resultsEl.innerHTML =
+                            data.results.map(r  => `<div style="color:#10B981">✓ ${r}</div>`).join('') +
+                            data.errors.map(err => `<div style="color:#EF4444">✗ ${err}</div>`).join('');
+                        resultsEl.style.display = 'block';
+                    }
+                    if (data.imported > 0) {
+                        if (_nlInput) _nlInput.value = '';
+                        _updateModeLabel();
+                        setTimeout(() => location.reload(), 3000);
+                    }
+                } else {
+                    showAlert('ai-alert', data.error || 'Import failed.', 'error');
+                }
+            } catch (err) {
+                hideSpinner();
+                showAlert('ai-alert', 'Network error: ' + err.message, 'error');
             }
-        } catch (err) {
-            hideSpinner();
-            showAlert('ai-alert', 'Network error: ' + err.message, 'error');
+
+        } else {
+            // ── Single entry path ──────────────────────────────────────────
+            const singleLine = input.split('\n').find(l => l.trim() && !l.trim().startsWith('#')) || input;
+            try {
+                const res  = await fetch('/api/ai_entry', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ text: singleLine }),
+                });
+                const data = await res.json();
+                hideSpinner();
+
+                if (data.success) {
+                    showAlert('ai-alert', data.message, 'success');
+                    if (_nlInput) _nlInput.value = '';
+                    _updateModeLabel();
+                    _setUndoPending();
+                    _saveAlert(data.message, 'success');
+                    setTimeout(() => location.reload(), 1200);
+                } else {
+                    showAlert('ai-alert', data.error || 'Processing failed.', 'error');
+                }
+            } catch (err) {
+                hideSpinner();
+                showAlert('ai-alert', 'Network error: ' + err.message, 'error');
+            }
         }
     });
 }
@@ -141,16 +208,71 @@ if (undoBtn) {
 }
 
 /* ── Month selector for Tab 2 ── */
+let _expRows = [];
+let _incRows = [];
+
 const monthSel = document.getElementById('month-select');
 if (monthSel) {
+    // Keep export link in sync with the selected month
+    const pdfBtn = document.getElementById('export-pdf-btn');
+
     monthSel.addEventListener('change', async () => {
         const month = monthSel.value;
+        if (pdfBtn) pdfBtn.href = `/report/${encodeURIComponent(month)}`;
+
         const res  = await fetch(`/api/monthly?month=${encodeURIComponent(month)}`);
         const data = await res.json();
+        _expRows = data.exp_rows || [];
+        _incRows = data.inc_rows || [];
         renderMonthly(data);
+
+        // Reset search boxes when month changes
+        const expS = document.getElementById('exp-search');
+        const incS = document.getElementById('inc-search');
+        if (expS) expS.value = '';
+        if (incS) incS.value = '';
+        _updateSearchCounts('exp-search-count', _expRows.length, _expRows.length);
+        _updateSearchCounts('inc-search-count', _incRows.length, _incRows.length);
     });
     // Trigger on load to populate with current month
     monthSel.dispatchEvent(new Event('change'));
+}
+
+/* ── Table search / filter ── */
+function _matchesSearch(row, q) {
+    if (!q) return true;
+    const lq = q.toLowerCase();
+    return Object.values(row).some(v => String(v ?? '').toLowerCase().includes(lq));
+}
+
+function _updateSearchCounts(countId, shown, total) {
+    const el = document.getElementById(countId);
+    if (!el) return;
+    if (!shown && total === 0) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.textContent = shown < total ? `Showing ${shown} of ${total} rows` : `${total} rows`;
+}
+
+const expSearch = document.getElementById('exp-search');
+if (expSearch) {
+    expSearch.addEventListener('input', () => {
+        const q = expSearch.value.trim();
+        const filtered = _expRows.filter(r => _matchesSearch(r, q));
+        renderTable('exp-table', filtered,
+            ['Date','Item','Amount','Category','Rule_Bucket','Card'],
+            { Rule_Bucket: bucketSelectCell });
+        _updateSearchCounts('exp-search-count', filtered.length, _expRows.length);
+    });
+}
+
+const incSearch = document.getElementById('inc-search');
+if (incSearch) {
+    incSearch.addEventListener('input', () => {
+        const q = incSearch.value.trim();
+        const filtered = _incRows.filter(r => _matchesSearch(r, q));
+        renderTable('inc-table', filtered, ['Date','Source','Amount','Card']);
+        _updateSearchCounts('inc-search-count', filtered.length, _incRows.length);
+    });
 }
 
 /* ── Render monthly breakdown ── */
@@ -277,6 +399,7 @@ if (investAddForm) {
     investAddForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const assetName   = document.getElementById('inv-asset-name').value.trim();
+        const assetType   = document.getElementById('inv-asset-type')?.value || 'Other';
         const amtRaw      = document.getElementById('inv-amount').value.trim().replace(',', '.');
         const curRaw      = document.getElementById('inv-current').value.trim().replace(',', '.');
         const amtInvested = parseFloat(amtRaw);
@@ -289,7 +412,7 @@ if (investAddForm) {
         const res  = await fetch('/api/investments/add', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asset_name: assetName, amount_invested: amtInvested, current_value: currentVal }),
+            body: JSON.stringify({ asset_name: assetName, asset_type: assetType, amount_invested: amtInvested, current_value: currentVal }),
         });
         const data = await res.json();
         if (data.success) {
@@ -387,6 +510,28 @@ document.getElementById('ppk-table-wrap')?.addEventListener('click', async (e) =
     const res = await fetch(`/api/ppk/delete/${id}`, { method: 'POST' });
     if ((await res.json()).success) location.reload();
 });
+
+/* ── File upload → load into unified textarea ── */
+const bulkFileInput = document.getElementById('bulk-file');
+if (bulkFileInput) {
+    bulkFileInput.addEventListener('change', () => {
+        const file = bulkFileInput.files[0];
+        if (!file || !_nlInput) return;
+        const fileChip = document.getElementById('file-chip');
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            _nlInput.value = ev.target.result;
+            _updateModeLabel();
+            if (fileChip) {
+                fileChip.textContent = `📄 ${file.name}`;
+                fileChip.style.display = 'inline';
+            }
+        };
+        reader.readAsText(file);
+        // Reset so the same file can be re-selected
+        bulkFileInput.value = '';
+    });
+}
 
 document.getElementById('checklist-list')?.addEventListener('click', async (e) => {
     const item = e.target.closest('.checklist-list-item');

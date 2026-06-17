@@ -8,6 +8,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
 
@@ -15,6 +16,10 @@
 <header class="topbar">
     <span class="topbar-icon">💳</span>
     <span class="topbar-brand">AI Finance Guard</span>
+    <nav style="display:flex; gap:4px; margin-left:auto;">
+        <a href="/"     class="topbar-nav-link {% if request.path == '/' %}active{% endif %}">Dashboard</a>
+        <a href="/data" class="topbar-nav-link {% if request.path == '/data' %}active{% endif %}">Data Editor</a>
+    </nav>
 </header>
 
 <!-- Spinner overlay -->
@@ -27,21 +32,32 @@
 
     <!-- Sidebar -->
     <aside class="sidebar">
-        <h2>🧠 AI Data Entry</h2>
-        <p class="sidebar-desc">Log expenses, income, investments, or account transfers.</p>
+        <h2>🧠 AI Finance Entry</h2>
+        <p class="sidebar-desc">Type a single entry or paste multiple lines — AI parses everything. Attach a <em>.txt / .csv</em> file for batch import.</p>
 
         <form id="ai-entry-form">
-            <div class="form-group">
-                <label class="form-label" for="nl-input">Message</label>
-                <textarea id="nl-input" name="text"
-                    placeholder="e.g., 'Transfer 500zł from PKO to Revolut' or 'Got 6000zł salary on PKO'"></textarea>
+            <textarea id="nl-input" name="text"
+                placeholder="Single entry:&#10;  Groceries 120zł on PKO&#10;&#10;Multiple entries (one per line):&#10;  Got salary 8000 on PKO&#10;  Netflix 50 Revolut&#10;  Transfer 500 PKO to Revolut&#10;&#10;CSV (description, amount, card, date)"
+                style="height:172px; resize:vertical;"></textarea>
+
+            <div class="sidebar-entry-meta">
+                <span id="entry-mode-label"></span>
+                <span id="file-chip" style="display:none;"></span>
             </div>
-            <button type="submit" class="btn btn-full" style="margin-top:8px;">Process with AI</button>
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <label for="bulk-file" class="btn sidebar-file-label" title="Upload .txt, .md or .csv">
+                    📎 File
+                </label>
+                <input type="file" id="bulk-file" accept=".txt,.md,.csv" style="display:none;">
+                <button type="submit" class="btn btn-full">Process with AI</button>
+            </div>
         </form>
 
-        <div id="ai-alert" class="alert" style="display:none;"></div>
+        <div id="ai-alert" class="alert" style="display:none; margin-top:10px;"></div>
+        <div id="bulk-results" style="display:none; margin-top:8px; font-size:0.75rem; line-height:1.8; max-height:200px; overflow-y:auto;"></div>
 
-        <div id="undo-section" style="display:none;">
+        <div id="undo-section" style="display:none; margin-top:12px;">
             <hr class="divider">
             <button id="undo-btn" class="btn btn-danger btn-full">⚠️ Undo Last Action</button>
         </div>

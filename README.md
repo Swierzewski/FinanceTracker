@@ -1,6 +1,6 @@
 # FinanceTracker
 
-A personal finance dashboard with AI-powered data entry via a web app and Telegram bot. Built with Flask, Plotly, and a local LLM (Ollama/Llama3).
+A personal finance dashboard with AI-powered data entry via a web app and Telegram bot. Built with Flask, Plotly, and a local LLM (Ollama/qwen2.5).
 
 ---
 
@@ -40,6 +40,22 @@ Supported record types: `expense`, `income`, `transfer`, `investment`.
 
 Each entry can be **undone** with one click (web) or `/undo` (Telegram).
 
+### Bulk import
+
+Paste multiple entries at once via the web UI. Accepts:
+- **Plain text** — one entry per line (natural language, same format as AI entry)
+- **CSV** — columns: `description`/`item`/`name`, `amount`, `card`, `date`
+
+Lines starting with `#` are treated as comments. Each line is individually parsed by the LLM and written to the appropriate CSV.
+
+### Data editor
+
+Navigate to `/data` to edit the raw expenses, income, and transfers tables directly in the browser. Cells are editable inline; add or delete rows and click **Save** to persist to disk.
+
+### Monthly report
+
+Navigate to `/report/<Month>` (e.g. `/report/June`) to view a printable summary of income, expenses, rule-bucket breakdown, and portfolio snapshot for any month.
+
 ### Budget rules (50/30/20)
 
 Every expense is tagged as **Needs**, **Wants**, or **Investments**. The dashboard shows how much of your income each bucket consumed, and compares it against the targets configured in `budget.yaml`.
@@ -73,11 +89,14 @@ FinanceTracker/
 │   ├── income.csv
 │   ├── transfers.csv
 │   ├── portfolio.csv
+│   ├── investments.csv
 │   ├── ppk.csv
 │   └── checklist.json
 ├── templates/
 │   ├── base.html
-│   └── index.html
+│   ├── index.html
+│   ├── data.html       # Inline data editor
+│   └── report.html     # Printable monthly report
 └── static/
     ├── css/styles.css
     └── js/app.js
@@ -90,9 +109,9 @@ FinanceTracker/
 ### Prerequisites
 
 - Python 3.10+
-- [Ollama](https://ollama.com) running locally with the `llama3` model pulled:
+- [Ollama](https://ollama.com) running locally with the `qwen2.5:1.5b` model pulled:
   ```bash
-  ollama pull llama3
+  ollama pull qwen2.5:1.5b
   ```
 
 ### Install dependencies
@@ -162,10 +181,15 @@ Run both processes simultaneously to use both interfaces against the same data f
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Main dashboard |
+| GET | `/data` | Inline data editor |
+| GET | `/report/<month>` | Printable monthly report |
 | GET | `/api/monthly?month=January` | Monthly income/expense breakdown |
 | POST | `/api/ai_entry` | Log entry via natural language |
 | POST | `/api/undo` | Undo the last AI entry |
+| POST | `/api/bulk_import` | Import multiple entries (text or CSV) |
 | POST | `/api/expense/<row>/bucket` | Re-categorise an expense bucket |
+| GET | `/api/data/<table>` | Fetch raw table rows (expenses/income/transfers) |
+| POST | `/api/data/<table>/save` | Overwrite a table with edited rows |
 | POST | `/api/investments/add` | Add a portfolio asset |
 | POST | `/api/investments/update` | Update asset current value |
 | POST | `/api/investments/delete/<id>` | Remove a portfolio asset |
@@ -184,6 +208,6 @@ Run both processes simultaneously to use both interfaces against the same data f
 | Web framework | Flask |
 | Data processing | pandas, NumPy |
 | Charts | Plotly |
-| LLM integration | Ollama (llama3) |
+| LLM integration | Ollama (qwen2.5:1.5b) |
 | Config | PyYAML |
 | Telegram | pyTelegramBotAPI |

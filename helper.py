@@ -122,7 +122,10 @@ def process_financial_input(nl_input, current_month_name, cards_str):
         {'role': 'user', 'content': nl_input}
     ], format='json')
 
-    raw = json.loads(response['message']['content'])
+    try:
+        raw = json.loads(response['message']['content'])
+    except (json.JSONDecodeError, KeyError) as e:
+        raise ValueError(f"LLM returned unparseable output: {e}")
     card_names = [c.strip() for c in cards_str.split(",") if c.strip()]
     return validate_and_fix(raw, card_names, current_month_name)
 

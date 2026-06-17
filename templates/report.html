@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ month }} Report — AI Finance Guard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --text:    #111827;
+            --muted:   #6B7280;
+            --border:  #E5E7EB;
+            --surface: #F9FAFB;
+            --accent:  #2563EB;
+            --green:   #059669;
+            --red:     #DC2626;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            color: var(--text);
+            font-size: 13px;
+            line-height: 1.5;
+            background: #fff;
+            padding: 40px 48px;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        /* ── Header ── */
+        .rpt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--accent);
+            margin-bottom: 28px;
+        }
+        .rpt-title   { font-size: 1.75rem; font-weight: 800; color: var(--accent); }
+        .rpt-sub     { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+        .rpt-logo    { font-size: 1.5rem; }
+
+        /* ── Section headings ── */
+        h2 {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            border-left: 3px solid var(--accent);
+            padding-left: 9px;
+            margin: 28px 0 14px;
+        }
+
+        /* ── Summary grid ── */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 4px;
+        }
+        .summary-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            background: var(--surface);
+        }
+        .summary-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; }
+        .summary-value { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+        .summary-note  { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+        .c-green { color: var(--green); }
+        .c-red   { color: var(--red);   }
+
+        /* ── Rule breakdown ── */
+        .rule-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .rule-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .rule-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+        .rule-value { font-size: 1.1rem; font-weight: 700; }
+        .rule-pct   { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+        .rule-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; }
+        .rule-bar      { height: 4px; border-radius: 2px; background: var(--accent); max-width: 100%; }
+
+        /* ── Data tables ── */
+        table { width: 100%; border-collapse: collapse; }
+        thead tr { background: var(--surface); }
+        th {
+            text-align: left;
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        td {
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.82rem;
+            vertical-align: middle;
+        }
+        tr:last-child td { border-bottom: none; }
+        tbody tr:hover { background: var(--surface); }
+        .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+        .pnl-pos { color: var(--green); font-weight: 600; }
+        .pnl-neg { color: var(--red);   font-weight: 600; }
+
+        /* Asset type badge */
+        .type-badge {
+            display: inline-block;
+            font-size: 0.67rem;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 99px;
+            white-space: nowrap;
+        }
+        .type-Stocks      { background: #DBEAFE; color: #1E40AF; }
+        .type-ETF         { background: #CCFBF1; color: #0F766E; }
+        .type-Crypto      { background: #FEF3C7; color: #92400E; }
+        .type-Bonds       { background: #D1FAE5; color: #065F46; }
+        .type-Cash        { background: #F3F4F6; color: #374151; }
+        .type-Real-Estate { background: #EDE9FE; color: #5B21B6; }
+        .type-Other       { background: #F3F4F6; color: #6B7280; }
+
+        /* ── Total row ── */
+        .total-row td { font-weight: 700; border-top: 2px solid var(--border); border-bottom: none; background: var(--surface); }
+
+        /* ── Footer ── */
+        .rpt-footer {
+            margin-top: 40px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        /* ── Print button (hidden when printing) ── */
+        .print-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid var(--border);
+            padding: 12px 40px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            z-index: 99;
+        }
+        .btn-print {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 7px;
+            padding: 9px 22px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-print:hover { opacity: 0.9; }
+        .btn-back {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            padding: 9px 18px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            font-family: inherit;
+            color: var(--muted);
+        }
+        .btn-back:hover { background: var(--surface); }
+        .print-hint { font-size: 0.78rem; color: var(--muted); margin-left: auto; }
+
+        @media print {
+            body { padding: 0; max-width: none; }
+            .print-bar { display: none; }
+            h2 { margin-top: 20px; }
+            @page { margin: 18mm 16mm; size: A4; }
+        }
+
+        /* extra bottom padding so content isn't hidden by print bar */
+        .rpt-footer { margin-bottom: 72px; }
+    </style>
+</head>
+<body>
+
+<div class="rpt-header">
+    <div>
+        <div class="rpt-title">{{ month }} Financial Report</div>
+        <div class="rpt-sub">AI Finance Guard &nbsp;·&nbsp; Generated {{ generated_at }}</div>
+    </div>
+    <div class="rpt-logo">💳</div>
+</div>
+
+<!-- ── Summary ── -->
+<h2>Overview</h2>
+<div class="summary-grid">
+    <div class="summary-card">
+        <div class="summary-label">Total Income</div>
+        <div class="summary-value c-green">{{ "%.2f"|format(m_income) }} zł</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-label">Total Expenses</div>
+        <div class="summary-value">{{ "%.2f"|format(m_expenses) }} zł</div>
+        {% if m_income > 0 %}
+        <div class="summary-note">{{ "%.1f%%"|format(m_expenses / m_income * 100) }} of income</div>
+        {% endif %}
+    </div>
+    <div class="summary-card">
+        <div class="summary-label">Net Savings</div>
+        <div class="summary-value {{ 'c-green' if m_savings >= 0 else 'c-red' }}">
+            {{ "%+.2f"|format(m_savings) }} zł
+        </div>
+        {% if m_income > 0 %}
+        <div class="summary-note">{{ "%.1f%%"|format(m_savings / m_income * 100) }} savings rate</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ── 50/30/20 ── -->
+<h2>50 / 30 / 20 Budget Rule</h2>
+{% set needs_pct  = (needs  / m_income * 100) if m_income > 0 else 0 %}
+{% set wants_pct  = (wants  / m_income * 100) if m_income > 0 else 0 %}
+{% set invest_pct = (invest / m_income * 100) if m_income > 0 else 0 %}
+<div class="rule-grid">
+    <div class="rule-card">
+        <div class="rule-label">Needs &nbsp;·&nbsp; Target 50%</div>
+        <div class="rule-value">{{ "%.2f"|format(needs) }} zł</div>
+        <div class="rule-pct">{{ "%.1f%%"|format(needs_pct) }} of income</div>
+        <div class="rule-bar-wrap"><div class="rule-bar" style="width:{{ [needs_pct, 100]|min }}%;background:{% if needs_pct > 60 %}#DC2626{% elif needs_pct > 50 %}#F59E0B{% else %}#2563EB{% endif %};"></div></div>
+    </div>
+    <div class="rule-card">
+        <div class="rule-label">Wants &nbsp;·&nbsp; Target 30%</div>
+        <div class="rule-value">{{ "%.2f"|format(wants) }} zł</div>
+        <div class="rule-pct">{{ "%.1f%%"|format(wants_pct) }} of income</div>
+        <div class="rule-bar-wrap"><div class="rule-bar" style="width:{{ [wants_pct, 100]|min }}%;background:{% if wants_pct > 40 %}#DC2626{% elif wants_pct > 30 %}#F59E0B{% else %}#6366F1{% endif %};"></div></div>
+    </div>
+    <div class="rule-card">
+        <div class="rule-label">Investments &nbsp;·&nbsp; Target 20%</div>
+        <div class="rule-value">{{ "%.2f"|format(invest) }} zł</div>
+        <div class="rule-pct">{{ "%.1f%%"|format(invest_pct) }} of income</div>
+        <div class="rule-bar-wrap"><div class="rule-bar" style="width:{{ [invest_pct, 100]|min }}%;background:{% if invest_pct >= 20 %}#059669{% else %}#F59E0B{% endif %};"></div></div>
+    </div>
+</div>
+
+<!-- ── Expenses ── -->
+{% if exp_rows %}
+<h2>Expenses &nbsp;({{ exp_rows|length }} entries)</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Item</th>
+            <th>Bucket</th>
+            <th>Card</th>
+            <th class="num">Amount (zł)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in exp_rows %}
+        <tr>
+            <td style="color:var(--muted);">{{ row.Date }}</td>
+            <td>{{ row.Item }}</td>
+            <td>{{ row.Rule_Bucket }}</td>
+            <td style="color:var(--muted);">{{ row.Card }}</td>
+            <td class="num">{{ "%.2f"|format(row.Amount) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total-row">
+            <td colspan="4">Total</td>
+            <td class="num">{{ "%.2f"|format(m_expenses) }}</td>
+        </tr>
+    </tbody>
+</table>
+{% else %}
+<h2>Expenses</h2>
+<p style="color:var(--muted); font-size:0.82rem; margin-bottom:12px;">No expenses recorded for {{ month }}.</p>
+{% endif %}
+
+<!-- ── Income ── -->
+{% if inc_rows %}
+<h2>Income &nbsp;({{ inc_rows|length }} entries)</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Source</th>
+            <th>Card</th>
+            <th class="num">Amount (zł)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in inc_rows %}
+        <tr>
+            <td style="color:var(--muted);">{{ row.Date }}</td>
+            <td>{{ row.Source }}</td>
+            <td style="color:var(--muted);">{{ row.Card }}</td>
+            <td class="num">{{ "%.2f"|format(row.Amount) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total-row">
+            <td colspan="3">Total</td>
+            <td class="num">{{ "%.2f"|format(m_income) }}</td>
+        </tr>
+    </tbody>
+</table>
+{% else %}
+<h2>Income</h2>
+<p style="color:var(--muted); font-size:0.82rem; margin-bottom:12px;">No income recorded for {{ month }}.</p>
+{% endif %}
+
+<!-- ── Portfolio snapshot ── -->
+{% if portfolio_rows %}
+<h2>Portfolio Snapshot</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Asset</th>
+            <th>Type</th>
+            <th class="num">Invested (zł)</th>
+            <th class="num">Current Value (zł)</th>
+            <th class="num">P&amp;L (zł)</th>
+            <th class="num">ROI</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% set ns = namespace(total_inv=0, total_cur=0) %}
+        {% for row in portfolio_rows %}
+        {% set pnl = row.current_value - row.amount_invested %}
+        {% set roi = (pnl / row.amount_invested * 100) if row.amount_invested > 0 else 0 %}
+        {% set atype = (row.asset_type or 'Other') | replace(' ', '-') %}
+        {% set ns.total_inv = ns.total_inv + row.amount_invested %}
+        {% set ns.total_cur = ns.total_cur + row.current_value %}
+        <tr>
+            <td><strong>{{ row.asset_name }}</strong></td>
+            <td><span class="type-badge type-{{ atype }}">{{ row.asset_type or 'Other' }}</span></td>
+            <td class="num">{{ "%.2f"|format(row.amount_invested) }}</td>
+            <td class="num">{{ "%.2f"|format(row.current_value) }}</td>
+            <td class="num {{ 'pnl-pos' if pnl >= 0 else 'pnl-neg' }}">{{ "%+.2f"|format(pnl) }}</td>
+            <td class="num {{ 'pnl-pos' if roi >= 0 else 'pnl-neg' }}">{{ "%+.1f%%"|format(roi) }}</td>
+        </tr>
+        {% endfor %}
+        {% set total_pnl = ns.total_cur - ns.total_inv %}
+        <tr class="total-row">
+            <td colspan="2">Total</td>
+            <td class="num">{{ "%.2f"|format(ns.total_inv) }}</td>
+            <td class="num">{{ "%.2f"|format(ns.total_cur) }}</td>
+            <td class="num {{ 'pnl-pos' if total_pnl >= 0 else 'pnl-neg' }}">{{ "%+.2f"|format(total_pnl) }}</td>
+            <td class="num {{ 'pnl-pos' if total_pnl >= 0 else 'pnl-neg' }}">
+                {% if ns.total_inv > 0 %}{{ "%+.1f%%"|format(total_pnl / ns.total_inv * 100) }}{% else %}—{% endif %}
+            </td>
+        </tr>
+    </tbody>
+</table>
+{% endif %}
+
+<div class="rpt-footer">
+    <span>AI Finance Guard &nbsp;·&nbsp; {{ month }} {{ generated_at[:4] }}</span>
+    <span>Generated {{ generated_at }}</span>
+</div>
+
+<!-- ── Print bar ── -->
+<div class="print-bar">
+    <button class="btn-back" onclick="window.history.back()">← Back</button>
+    <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+    <span class="print-hint">In the print dialog, choose "Save as PDF" to export.</span>
+</div>
+
+</body>
+</html>
